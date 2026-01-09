@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-leaflet';
 import { supabase } from '@/lib/supabaseClient';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -26,32 +26,11 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
     }
 
     return (
-        <div className="h-full w-full rounded-lg overflow-hidden border border-gray-200 shadow-sm z-0 relative">
-            <MapContainer center={center} zoom={9} className="w-full h-full" style={{ minHeight: '600px' }}>
-                <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                {contracts.map((c) => (
-                    c.lat && c.lng ? (
-                        <Marker key={c.id} position={[c.lat, c.lng]}>
-                            <Popup>
-                                <div className="text-sm">
-                                    <b>{c.customer_name}</b>
-                                    <br />
-                                    {c.location_name}
-                                    <br />
-                                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${c.cycle_status === 'overdue' ? 'bg-red-100 text-red-700' :
-                                            c.cycle_status === 'due' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                                        }`}>
-                                        {c.cycle_status.toUpperCase()}
-                                    </span>
-                                </div>
-                            </Popup>
-                        </Marker>
+                        </Marker >
                     ) : null
-                ))}
-            </MapContainer>
-        </div>
+                ))
+}
+            </MapContainer >
+        </div >
     );
 }
