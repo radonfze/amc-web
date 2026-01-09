@@ -16,42 +16,55 @@ export default function LoginPage() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        console.log("Attempting login...");
 
-        // 1. Authenticate
-        const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
+        try {
+            // 1. Authenticate
+            const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
 
-        if (authError || !user) {
-            setError(authError?.message || 'Login failed');
+            if (authError || !user) {
+                console.error("Auth Error:", authError);
+                setError(authError?.message || 'Login failed');
+                setLoading(false);
+                return;
+            }
+            console.log("Auth successful, User ID:", user.id);
+
+            // 2. Fetch Role from Profile
+            console.log("Fetching profile...");
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+
+            if (profileError || !profile) {
+                console.error("Profile Error:", profileError);
+                // If profile missing, maybe they just signed up?
+                // For now, treat as error.
+                setError('Profile not found. Please contact admin.');
+                setLoading(false);
+                await supabase.auth.signOut();
+                return;
+            }
+            console.log("Profile found, Role:", profile.role);
+
+            // 3. Redirect based on role
+            console.log("Redirecting...");
+            if (profile.role === 'manager' || profile.role === 'admin') {
+                router.push('/manager');
+            } else if (profile.role === 'technician') {
+                router.push('/tech');
+            } else {
+                router.push('/');
+            }
+        } catch (err: any) {
+            console.error("Unexpected login error:", err);
+            setError("Unexpected error: " + err.message);
             setLoading(false);
-            return;
-        }
-
-        // 2. Fetch Role from Profile
-        const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-
-        if (profileError || !profile) {
-            // If no profile, it might be a race condition on signup trigger or missing data
-            // For now, fail safe.
-            setError('Profile not found. Please contact admin.');
-            setLoading(false);
-            await supabase.auth.signOut();
-            return;
-        }
-
-        // 3. Redirect based on role
-        if (profile.role === 'manager' || profile.role === 'admin') {
-            router.push('/manager');
-        } else if (profile.role === 'technician') {
-            router.push('/tech'); // Assuming /tech is the base for technician
-        } else {
-            router.push('/'); // Fallback
         }
     }
 
