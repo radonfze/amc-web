@@ -28,6 +28,15 @@ const queries = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_gra ON public.customers(gra_number) WHERE gra_number IS NOT NULL;`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_license ON public.customers(license_number) WHERE license_number IS NOT NULL;`,
 
+  // 6. Fix RLS for Customers (Allow Managers to Create)
+  `ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS "Enable insert for authenticated users" ON public.customers;`,
+  `CREATE POLICY "Enable insert for authenticated users" ON public.customers FOR INSERT WITH CHECK (auth.role() = 'authenticated');`,
+  `DROP POLICY IF EXISTS "Enable select for authenticated users" ON public.customers;`,
+  `CREATE POLICY "Enable select for authenticated users" ON public.customers FOR SELECT USING (auth.role() = 'authenticated');`,
+  `DROP POLICY IF EXISTS "Enable update for authenticated users" ON public.customers;`,
+  `CREATE POLICY "Enable update for authenticated users" ON public.customers FOR UPDATE USING (auth.role() = 'authenticated');`,
+
   // 5c. Spec v1.1 Extensions (GPS, Distance, Cycle)
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS latitude decimal CHECK (latitude BETWEEN -90 AND 90);`,
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS longitude decimal CHECK (longitude BETWEEN -180 AND 180);`,
