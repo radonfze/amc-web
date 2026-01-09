@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 
 // Hardcoded Office Location (Al Twar/Qusais area approx)
 // Update these coordinates to your actual office location to get 0.000 when testing at desk.
-const OFFICE_LAT = 25.800000;
-const OFFICE_LNG = 55.950000;
+// Hardcoded Office Location (Updated to User's location for 0 distance test)
+const OFFICE_LAT = 25.799156;
+const OFFICE_LNG = 55.970612;
 
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371;
@@ -48,13 +49,16 @@ export default function NewContractPage() {
     useEffect(() => {
         if (form.amcDate && duration) {
             const start = new Date(form.amcDate);
-            const end = new Date(start);
-            end.setMonth(start.getMonth() + duration);
-            // Subtract 1 day for standard contract logic (e.g. Jan 1 to Dec 31)
-            end.setDate(end.getDate() - 1);
+            // Handle date safety
+            if (!isNaN(start.getTime())) {
+                const end = new Date(start);
+                end.setMonth(start.getMonth() + duration);
+                // Subtract 1 day for standard contract logic (e.g. Jan 1 to Dec 31)
+                end.setDate(end.getDate() - 1);
 
-            const renewalStr = end.toISOString().split('T')[0];
-            setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+                const renewalStr = end.toISOString().split('T')[0];
+                setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+            }
         }
     }, [form.amcDate, duration]);
 
@@ -232,8 +236,8 @@ export default function NewContractPage() {
 
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Last Renewed</label>
-                            <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
+                            <label className="text-xs text-gray-500 block mb-1">Expired Date (Previous)</label>
+                            <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" />
                         </div>
                         <div>
                             <label className="text-xs text-gray-500 block mb-1">Contract Value</label>
