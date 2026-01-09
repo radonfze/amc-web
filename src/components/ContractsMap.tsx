@@ -21,16 +21,52 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
     // Defaulting to Dubai/RAK approximate center
     const center: [number, number] = [25.1985, 55.2797];
 
-    if (contracts.length > 0 && contracts[0].lat) {
-        // center = [contracts[0].lat, contracts[0].lng]
-    }
-
     return (
-                        </Marker >
+        <div className="h-full w-full rounded-lg overflow-hidden border border-gray-200 shadow-sm z-0 relative">
+            <MapContainer center={center} zoom={9} className="w-full h-full" style={{ minHeight: '600px' }}>
+                <LayersControl position="topright">
+                    <LayersControl.BaseLayer checked name="Google Hybrid (Detailed)">
+                        <TileLayer
+                            url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+                            attribution="Google Maps"
+                            maxZoom={20}
+                        />
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="Google Streets">
+                        <TileLayer
+                            url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                            attribution="Google Maps"
+                            maxZoom={20}
+                        />
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="OpenStreetMap">
+                        <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                    </LayersControl.BaseLayer>
+                </LayersControl>
+
+                {contracts.map((c) => (
+                    c.lat && c.lng ? (
+                        <Marker key={c.id} position={[c.lat, c.lng]}>
+                            <Popup>
+                                <div className="text-sm">
+                                    <b>{c.customer_name}</b>
+                                    <br />
+                                    {c.location_name}
+                                    <br />
+                                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${c.cycle_status === 'overdue' ? 'bg-red-100 text-red-700' :
+                                        c.cycle_status === 'due' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                                        }`}>
+                                        {c.cycle_status ? c.cycle_status.toUpperCase() : 'ACTIVE'}
+                                    </span>
+                                </div>
+                            </Popup>
+                        </Marker>
                     ) : null
-                ))
-}
-            </MapContainer >
-        </div >
+                ))}
+            </MapContainer>
+        </div>
     );
 }
