@@ -58,25 +58,32 @@ export default function ContractsList() {
                     <h1 className="text-2xl font-bold text-gray-900">Contracts</h1>
                     <span className="text-sm text-gray-500">{contracts.length} records found</span>
                 </div>
-                <button
-                    onClick={handleExport}
-                    disabled={contracts.length === 0}
-                    className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
-                >
-                    <span>↓</span> Export CSV
-                </button>
-            </div>
-
-            {loading ? (
-                <p className="text-gray-500">Loading contracts...</p>
-            ) : (
-                <div className="space-y-3">
-                    {contracts.length === 0 && <p className="text-gray-500">No contracts found.</p>}
-                    {contracts.map((c) => (
-                        <ContractRow key={c.id} contract={c} />
-                    ))}
+                <div className="flex gap-2">
+                    <Link
+                        href="/manager/contracts/new"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2"
+                    >
+                        <span>+</span> New Contract
+                    </Link>
+                    <button
+                        onClick={handleExport}
+                        disabled={contracts.length === 0}
+                        className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                    >
+                        <span>↓</span> Export CSV
+                    </button>
                 </div>
-            )}
-        </div>
-    );
+
+                {loading ? (
+                    <p className="text-gray-500">Loading contracts...</p>
+                ) : (
+                    <div className="space-y-3">
+                        {contracts.length === 0 && <p className="text-gray-500">No contracts found.</p>}
+                        {contracts.map((c) => (
+                            <ContractRow key={c.id} contract={c} />
+                        ))}
+                    </div>
+                )}
+            </div>
+            );
 }
