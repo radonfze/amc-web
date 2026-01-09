@@ -20,6 +20,12 @@ const queries = [
   `CREATE POLICY "mgr_admin_manage_import_items" ON public.import_run_items FOR ALL TO authenticated USING ( public.current_role() IN ('manager', 'admin') ) WITH CHECK ( public.current_role() IN ('manager', 'admin') );`,
   `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS technician_id uuid REFERENCES public.users(id);`,
 
+  // 5b. GRA & License Numbers (User Request)
+  `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS gra_number text;`,
+  `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS license_number text;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_gra ON public.customers(gra_number) WHERE gra_number IS NOT NULL;`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_license ON public.customers(license_number) WHERE license_number IS NOT NULL;`,
+
   // 6. Data Ops (Tech Areas, Quality Score, Merge Function)
   `CREATE TABLE IF NOT EXISTS public.technician_areas (
         id bigint generated always as identity primary key,

@@ -30,15 +30,24 @@ export default function NewContractPage() {
                 {/* Section 1: Customer */}
                 <div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-1">1. Customer Details</h3>
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Phone Number *</label>
                             <input name="phone" type="tel" required placeholder="0501234567" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
                             <p className="text-xs text-gray-500 mt-1">We'll check if this customer exists first.</p>
                         </div>
-                        <div>
+                        <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700">Customer Name *</label>
                             <input name="customerName" type="text" required placeholder="Company or Person Name" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">GRA Number</label>
+                            <input name="graNumber" type="text" placeholder="e.g. 12948" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">License Number</label>
+                            <input name="licenseNumber" type="text" placeholder="e.g. 102938" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
+                            <p className="text-xs text-gray-500 mt-1">GRA or License must be unique.</p>
                         </div>
                     </div>
                 </div>
