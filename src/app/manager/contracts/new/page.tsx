@@ -42,6 +42,8 @@ export default function NewContractPage() {
         renewedDate: '',
         status: '',
         distance: '',
+        govtFees: '',
+        amcValue: '',
         amount: ''
     });
 
@@ -96,6 +98,14 @@ export default function NewContractPage() {
         if (name !== 'customerName') {
             setForm((prev) => {
                 const updated = { ...prev, [name]: value };
+
+                // Auto-calc Total Amount
+                if (name === 'govtFees' || name === 'amcValue') {
+                    const g = parseFloat(name === 'govtFees' ? value : prev.govtFees) || 0;
+                    const a = parseFloat(name === 'amcValue' ? value : prev.amcValue) || 0;
+                    updated.amount = (g + a).toFixed(2);
+                }
+
                 // Auto-calc Day
                 if (name === 'amcDate' && value) {
                     const date = new Date(value);
@@ -240,8 +250,25 @@ export default function NewContractPage() {
                             <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Contract Value</label>
-                            <input name="amount" type="number" step="0.01" value={form.amount} onChange={handleChange} placeholder="AED 0.00" className="input w-full border rounded px-3 py-2" />
+                            {/* Placeholder to keep grid alignment or empty */}
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 p-2 rounded border border-gray-200 space-y-2">
+                        <label className="text-xs font-semibold text-gray-500 uppercase">Contract Value Breakdown</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div>
+                                <label className="text-[10px] text-gray-500 block">Govt Charge</label>
+                                <input name="govtFees" type="number" step="0.01" value={form.govtFees} onChange={handleChange} placeholder="0.00" className="input w-full border rounded px-2 py-1" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-gray-500 block">Our AMC</label>
+                                <input name="amcValue" type="number" step="0.01" value={form.amcValue} onChange={handleChange} placeholder="0.00" className="input w-full border rounded px-2 py-1" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-gray-500 block">Total</label>
+                                <input name="amount" type="number" step="0.01" value={form.amount} readOnly className="input w-full border rounded px-2 py-1 bg-gray-100 font-bold text-gray-700" />
+                            </div>
                         </div>
                     </div>
 

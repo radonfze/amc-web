@@ -33,6 +33,8 @@ const queries = [
 
   `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS visit_day integer CHECK (visit_day BETWEEN 1 AND 366);`,
   `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS last_renewed_date date;`,
+  `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS govt_fees decimal DEFAULT 0;`,
+  `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS amc_value decimal DEFAULT 0;`,
 
   // 6. Data Ops (Tech Areas, Quality Score, Merge Function)
   `CREATE TABLE IF NOT EXISTS public.technician_areas (

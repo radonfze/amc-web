@@ -37,6 +37,8 @@ export async function createManualContract(formData: FormData) {
     const lastRenewed = formData.get('renewedDate') as string;
     const status = formData.get('status') as string;
     const amount = parseFloat(formData.get('amount') as string) || 0;
+    const govtFees = parseFloat(formData.get('govtFees') as string) || 0;
+    const amcValue = parseFloat(formData.get('amcValue') as string) || 0;
 
     if (!customerName) throw new Error("Customer Name is required");
 
@@ -107,6 +109,8 @@ export async function createManualContract(formData: FormData) {
             end_date: renewalDate,
             status: status,
             amount_total: amount,
+            govt_fees: govtFees,
+            amc_value: amcValue,
             payment_status: 'pending',
             cycle_status: 'ok',
             visit_day: visitDay,
