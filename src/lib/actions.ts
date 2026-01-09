@@ -3,16 +3,27 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
+export async function searchCustomers(query: string) {
+    const supabase = await createClient();
+    const { data } = await supabase
+        .from('customers')
+        .select('id, name, gra_number, license_number, phone')
+        .ilike('name', `%${query}%`)
+        .limit(5);
+    return data || [];
+}
+
 export async function createManualContract(formData: FormData) {
     const supabase = await createClient();
 
     // Fields from Form v1.1
-    const customerName = formData.get('customerName') as string || `Client ${formData.get('licenseNumber')}`; // Fallback if empty
+    // Customer Name is now mandatory and handled strictly
+    const customerName = formData.get('customerName') as string;
     const phone = formData.get('phone') as string;
     const locationName = formData.get('locationName') as string;
     const graNumber = formData.get('graNumber') as string;
     const licenseNumber = formData.get('licenseNumber') as string;
-    const area = 'Dubai'; // Default as form doesn't capture area explicitly anymore (relies on GPS)
+    const area = 'Dubai';
 
     // GPS & Distance
     const latitude = parseFloat(formData.get('latitude') as string) || 0;
@@ -20,46 +31,55 @@ export async function createManualContract(formData: FormData) {
     const distanceKm = parseFloat(formData.get('distance') as string) || 0;
 
     // Lifecycle
-    const amcDate = formData.get('amcDate') as string; // Start
-    const renewalDate = formData.get('renewalDate') as string; // End
+    const amcDate = formData.get('amcDate') as string;
+    const renewalDate = formData.get('renewalDate') as string;
     const visitDay = parseInt(formData.get('day') as string) || 1;
     const lastRenewed = formData.get('renewedDate') as string;
     const status = formData.get('status') as string;
     const amount = parseFloat(formData.get('amount') as string) || 0;
 
-    // 1. Create or Check Customer
-    if (graNumber) {
-        const { data: dup } = await supabase.from('customers').select('id').eq('gra_number', graNumber).maybeSingle();
-        if (dup) throw new Error(`Customer with GRA ${graNumber} already exists.`);
-    }
-    if (licenseNumber) {
-        const { data: dup } = await supabase.from('customers').select('id').eq('license_number', licenseNumber).maybeSingle();
-        if (dup) throw new Error(`Customer with License ${licenseNumber} already exists.`);
-    }
+    if (!customerName) throw new Error("Customer Name is required");
 
-    // Check Name Availability (only if explicitly provided)
-    if (formData.get('customerName')) {
-        const { data: existingName } = await supabase.from('customers').select('id').ilike('name', customerName).maybeSingle();
-        if (existingName) {
-            throw new Error(`Customer name "${customerName}" is already taken.`);
-        }
-    }
-
+    // 1. Find or Create Customer
     let customerId;
-    const { data: newCustomer, error: custError } = await supabase
-        .from('customers')
-        .insert({
-            name: customerName,
-            phone,
-            area,
-            gra_number: graNumber,
-            license_number: licenseNumber
-        })
-        .select()
-        .single();
+    let existingCustomer = null;
 
-    if (custError) throw new Error("Failed to create customer: " + custError.message);
-    customerId = newCustomer.id;
+    // A. Check by Strict Unique Keys
+    if (graNumber) {
+        const { data } = await supabase.from('customers').select('id, name').eq('gra_number', graNumber).maybeSingle();
+        if (data) existingCustomer = data;
+    }
+    if (!existingCustomer && licenseNumber) {
+        const { data } = await supabase.from('customers').select('id, name').eq('license_number', licenseNumber).maybeSingle();
+        if (data) existingCustomer = data;
+    }
+
+    // B. Check by Name (if not found by other keys)
+    if (!existingCustomer) {
+        const { data } = await supabase.from('customers').select('id, name').ilike('name', customerName).maybeSingle();
+        if (data) existingCustomer = data;
+    }
+
+    if (existingCustomer) {
+        // Reuse Existing Customer
+        customerId = existingCustomer.id;
+    } else {
+        // Create New Customer
+        const { data: newCustomer, error: custError } = await supabase
+            .from('customers')
+            .insert({
+                name: customerName,
+                phone,
+                area,
+                gra_number: graNumber,
+                license_number: licenseNumber
+            })
+            .select()
+            .single();
+
+        if (custError) throw new Error("Failed to create customer: " + custError.message);
+        customerId = newCustomer.id;
+    }
 
     // 2. Create Location
     const { data: newLoc, error: locError } = await supabase
@@ -67,8 +87,8 @@ export async function createManualContract(formData: FormData) {
         .insert({
             customer_id: customerId,
             display_name: locationName,
-            full_address: '', // Optional
-            google_plus_code: area, // Using area as simplistic locator
+            full_address: '',
+            google_plus_code: area,
             latitude,
             longitude,
             distance_km: distanceKm
@@ -91,7 +111,7 @@ export async function createManualContract(formData: FormData) {
             cycle_status: 'ok',
             visit_day: visitDay,
             last_renewed_date: lastRenewed,
-            last_effective_visit_date: amcDate, // Initial assumption
+            last_effective_visit_date: amcDate,
             next_due_date: new Date(new Date(amcDate).setDate(new Date(amcDate).getDate() + 90)).toISOString().slice(0, 10)
         });
 

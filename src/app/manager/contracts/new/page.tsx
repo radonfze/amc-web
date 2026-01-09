@@ -1,6 +1,6 @@
 'use client';
 
-import { createManualContract } from '@/lib/actions';
+import { createManualContract, searchCustomers } from '@/lib/actions';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -21,39 +21,71 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
 export default function NewContractPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [suggestions, setSuggestions] = useState<any[]>([]);
+
     const [form, setForm] = useState({
-        licenseNumber: '', // mapped from license_no
-        graNumber: '',     // mapped from gra_no
-        locationName: '',  // mapped from location_name
-        phone: '',         // mapped from contact_no
-        customerName: '',  // extra optional field
+        licenseNumber: '',
+        graNumber: '',
+        locationName: '',
+        phone: '',
+        customerName: '',
         latitude: '',
         longitude: '',
-        amcDate: '',       // mapped from amc_date
-        renewalDate: '',   // mapped from renewal_date
+        amcDate: '',
+        renewalDate: '',
         day: '',
-        renewedDate: '',   // mapped from renewed
+        renewedDate: '',
         status: '',
-        distance: '',      // mapped from distance_km
-        amount: ''         // extra field for contract value
+        distance: '',
+        amount: ''
     });
+
+    // Search Logic
+    const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        setForm(prev => ({ ...prev, customerName: val }));
+
+        if (val.length > 2) {
+            try {
+                const results = await searchCustomers(val);
+                setSuggestions(results);
+            } catch (err) {
+                console.error("Search failed", err);
+            }
+        } else {
+            setSuggestions([]);
+        }
+    };
+
+    const selectCustomer = (cust: any) => {
+        setForm(prev => ({
+            ...prev,
+            customerName: cust.name,
+            graNumber: cust.gra_number || '',
+            licenseNumber: cust.license_number || '',
+            phone: cust.phone || '',
+        }));
+        setSuggestions([]);
+    };
 
     function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
         const { name, value } = e.target;
-        setForm((prev) => {
-            const updated = { ...prev, [name]: value };
-
-            // Auto-calc Day if AMC Date changes
-            if (name === 'amcDate' && value) {
-                const date = new Date(value);
-                const start = new Date(date.getFullYear(), 0, 0);
-                const diff = date.getTime() - start.getTime();
-                const oneDay = 1000 * 60 * 60 * 24;
-                const day = Math.floor(diff / oneDay);
-                updated.day = day.toString();
-            }
-            return updated;
-        });
+        // Customer Name handled by search input specifically
+        if (name !== 'customerName') {
+            setForm((prev) => {
+                const updated = { ...prev, [name]: value };
+                // Auto-calc Day
+                if (name === 'amcDate' && value) {
+                    const date = new Date(value);
+                    const start = new Date(date.getFullYear(), 0, 0);
+                    const diff = date.getTime() - start.getTime();
+                    const oneDay = 1000 * 60 * 60 * 24;
+                    const day = Math.floor(diff / oneDay);
+                    updated.day = day.toString();
+                }
+                return updated;
+            });
+        }
     }
 
     function handleGPS() {
@@ -81,7 +113,6 @@ export default function NewContractPage() {
         setLoading(true);
 
         const formData = new FormData();
-        // Map form state to FormData expected by Server Action
         Object.entries(form).forEach(([key, value]) => {
             formData.append(key, value);
         });
@@ -98,15 +129,38 @@ export default function NewContractPage() {
     return (
         <div className="max-w-md mx-auto py-10">
             <h1 className="text-2xl font-bold text-gray-900 mb-6 font-mono text-center">AMC Entry Form v1.1</h1>
-            <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-lg shadow-md text-sm border border-gray-200">
+            <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-lg shadow-md text-sm border border-gray-200" onClick={() => setSuggestions([])}>
 
-                <div className="space-y-3">
+                <div className="space-y-3 relative">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">Identity</h3>
+
+                    {/* Searchable Name */}
+                    <div className="relative">
+                        <input
+                            name="customerName"
+                            value={form.customerName}
+                            onChange={handleNameChange}
+                            placeholder="Customer Name (Search) *"
+                            autoComplete="off"
+                            required
+                            className="input w-full border rounded px-3 py-2 bg-blue-50 focus:bg-white transition-colors border-blue-200"
+                        />
+                        {suggestions.length > 0 && (
+                            <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto mt-1">
+                                {suggestions.map((cust: any) => (
+                                    <div key={cust.id} onClick={(e) => { e.stopPropagation(); selectCustomer(cust); }} className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-xs border-b last:border-0 border-gray-100">
+                                        <span className="font-bold text-gray-800">{cust.name}</span>
+                                        <span className="text-gray-500">{cust.phone}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <input name="licenseNumber" value={form.licenseNumber} onChange={handleChange} placeholder="License No *" required className="input w-full border rounded px-3 py-2" />
                     <input name="graNumber" value={form.graNumber} onChange={handleChange} placeholder="GRA No *" required className="input w-full border rounded px-3 py-2" />
                     <input name="locationName" value={form.locationName} onChange={handleChange} placeholder="Location Name *" required className="input w-full border rounded px-3 py-2" />
                     <input name="phone" value={form.phone} onChange={handleChange} placeholder="Contact No (050...) *" required className="input w-full border rounded px-3 py-2" />
-                    <input name="customerName" value={form.customerName} onChange={handleChange} placeholder="Customer Name (Optional)" className="input w-full border rounded px-3 py-2" />
                 </div>
 
                 <div className="space-y-3">
