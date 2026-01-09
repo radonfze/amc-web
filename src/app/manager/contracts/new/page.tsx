@@ -2,7 +2,13 @@
 
 import { createManualContract, searchCustomers } from '@/lib/actions';
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
+
+const LocationPicker = dynamic(() => import('@/components/LocationPicker'), {
+    ssr: false,
+    loading: () => <p>Loading Map...</p>
+});
 
 // Hardcoded Office Location (Al Twar/Qusais area approx)
 // Update these coordinates to your actual office location to get 0.000 when testing at desk.
@@ -25,6 +31,7 @@ export default function NewContractPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [suggestions, setSuggestions] = useState<any[]>([]);
+    const [showMap, setShowMap] = useState(false);
 
     const [duration, setDuration] = useState(12); // Default 1 Year (12 months)
 
@@ -203,7 +210,27 @@ export default function NewContractPage() {
                         <button type="button" onClick={handleGPS} className="px-3 py-2 bg-blue-100 text-blue-700 rounded text-xs font-medium hover:bg-blue-200 whitespace-nowrap">
                             📍 Use GPS
                         </button>
+                        <button type="button" onClick={() => setShowMap(true)} className="px-3 py-2 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200 whitespace-nowrap">
+                            🗺️ Pick on Map
+                        </button>
                     </div>
+                    {showMap && LocationPicker && (
+                        <LocationPicker
+                            initialLat={parseFloat(form.latitude) || OFFICE_LAT}
+                            initialLng={parseFloat(form.longitude) || OFFICE_LNG}
+                            onCancel={() => setShowMap(false)}
+                            onSelect={(lat, lng) => {
+                                const dist = haversine(lat, lng, OFFICE_LAT, OFFICE_LNG).toFixed(3);
+                                setForm(prev => ({
+                                    ...prev,
+                                    latitude: lat.toFixed(6),
+                                    longitude: lng.toFixed(6),
+                                    distance: dist
+                                }));
+                                setShowMap(false);
+                            }}
+                        />
+                    )}
                     <div className="flex justify-between items-center bg-gray-50 border rounded px-3 py-2">
                         <span className="text-gray-500">Distance from Office</span>
                         <input name="distance" value={form.distance} onChange={handleChange} placeholder="0.000" required className="bg-transparent text-right w-20 outline-none font-mono font-bold text-gray-900" readOnly />
