@@ -26,6 +26,14 @@ const queries = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_gra ON public.customers(gra_number) WHERE gra_number IS NOT NULL;`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_license ON public.customers(license_number) WHERE license_number IS NOT NULL;`,
 
+  // 5c. Spec v1.1 Extensions (GPS, Distance, Cycle)
+  `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS latitude decimal CHECK (latitude BETWEEN -90 AND 90);`,
+  `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS longitude decimal CHECK (longitude BETWEEN -180 AND 180);`,
+  `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS distance_km decimal CHECK (distance_km >= 0 AND distance_km <= 500);`,
+
+  `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS visit_day integer CHECK (visit_day BETWEEN 1 AND 366);`,
+  `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS last_renewed_date date;`,
+
   // 6. Data Ops (Tech Areas, Quality Score, Merge Function)
   `CREATE TABLE IF NOT EXISTS public.technician_areas (
         id bigint generated always as identity primary key,
