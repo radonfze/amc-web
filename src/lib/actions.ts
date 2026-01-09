@@ -14,27 +14,45 @@ export async function createManualContract(formData: FormData) {
     const amount = parseFloat(formData.get('amount') as string);
     const startDate = formData.get('startDate') as string;
     const endDate = formData.get('endDate') as string;
+    const graNumber = formData.get('graNumber') as string || null;
+    const licenseNumber = formData.get('licenseNumber') as string || null;
 
-    // 1. Create or Find Customer
-    // Check by phone to avoid dupes
+    // 1. Create Customer
+    // User Requirement: Phone is NOT unique. Name/GRA/License MUST be unique.
+
+    // Check strict uniqueness for GRA/License/Name
+    if (graNumber) {
+        const { data: dup } = await supabase.from('customers').select('id').eq('gra_number', graNumber).maybeSingle();
+        if (dup) throw new Error(`Customer with GRA ${graNumber} already exists.`);
+    }
+    if (licenseNumber) {
+        const { data: dup } = await supabase.from('customers').select('id').eq('license_number', licenseNumber).maybeSingle();
+        if (dup) throw new Error(`Customer with License ${licenseNumber} already exists.`);
+    }
+
+    // Check Name Availability
+    const { data: existingName } = await supabase.from('customers').select('id').ilike('name', customerName).maybeSingle();
+    if (existingName) {
+        throw new Error(`Customer name "${customerName}" is already taken. Please search for it or use a different name.`);
+    }
+
     let customerId;
-    const { data: existingCustomer } = await supabase
+    const { data: newCustomer, error: custError } = await supabase
         .from('customers')
-        .select('id')
-        .eq('phone', phone)
+        .insert({
+            name: customerName,
+            phone,
+            area,
+            gra_number: graNumber,
+            license_number: licenseNumber
+        })
+        .select()
         .single();
 
-    if (existingCustomer) {
-        customerId = existingCustomer.id;
-    } else {
-        const { data: newCustomer, error: custError } = await supabase
-            .from('customers')
-            .insert({ name: customerName, phone, area })
-            .select()
-            .single();
-        if (custError) throw new Error("Failed to create customer: " + custError.message);
-        customerId = newCustomer.id;
+    if (custError) {
+        throw new Error("Failed to create customer: " + custError.message);
     }
+    customerId = newCustomer.id;
 
     // 2. Create Location
     const { data: newLoc, error: locError } = await supabase
