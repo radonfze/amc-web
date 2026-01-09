@@ -4,82 +4,87 @@ import { createManualContract } from '@/lib/actions';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-'use client';
+const OFFICE_LAT = 25.800000;
+const OFFICE_LNG = 55.950000;
 
-import { createManualContract } from '@/lib/actions';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
+    const toRad = (x: number) => (x * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export default function NewContractPage() {
-    const [loading, setLoading] = useState(false);
-    const [gpsLoading, setGpsLoading] = useState(false);
-    const [coords, setCoords] = useState<{ lat: string, lng: string }>({ lat: '', lng: '' });
-    const [distance, setDistance] = useState<string>('');
-    const [amcDate, setAmcDate] = useState<string>('');
-    const [dayOfYear, setDayOfYear] = useState<string>('');
     const router = useRouter();
+    const [loading, setLoading] = useState(false);
+    const [form, setForm] = useState({
+        licenseNumber: '', // mapped from license_no
+        graNumber: '',     // mapped from gra_no
+        locationName: '',  // mapped from location_name
+        phone: '',         // mapped from contact_no
+        customerName: '',  // extra optional field
+        latitude: '',
+        longitude: '',
+        amcDate: '',       // mapped from amc_date
+        renewalDate: '',   // mapped from renewal_date
+        day: '',
+        renewedDate: '',   // mapped from renewed
+        status: '',
+        distance: '',      // mapped from distance_km
+        amount: ''         // extra field for contract value
+    });
 
-    // Office Coordinates (Configurable)
-    const OFFICE = { lat: 25.800000, lng: 55.950000 };
+    function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+        const { name, value } = e.target;
+        setForm((prev) => {
+            const updated = { ...prev, [name]: value };
 
-    function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-        const R = 6371; // km
-        const dLat = toRad(lat2 - lat1);
-        const dLon = toRad(lon2 - lon1);
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return (R * c).toFixed(3);
+            // Auto-calc Day if AMC Date changes
+            if (name === 'amcDate' && value) {
+                const date = new Date(value);
+                const start = new Date(date.getFullYear(), 0, 0);
+                const diff = date.getTime() - start.getTime();
+                const oneDay = 1000 * 60 * 60 * 24;
+                const day = Math.floor(diff / oneDay);
+                updated.day = day.toString();
+            }
+            return updated;
+        });
     }
 
-    function toRad(val: number) {
-        return val * Math.PI / 180;
-    }
-
-    const handleGps = () => {
-        setGpsLoading(true);
+    function handleGPS() {
         if (!navigator.geolocation) {
-            alert("Geolocation is not supported by your browser");
-            setGpsLoading(false);
+            alert('GPS not supported');
             return;
         }
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude.toFixed(6);
-                const lng = position.coords.longitude.toFixed(6);
-                setCoords({ lat, lng });
-                setDistance(calculateDistance(OFFICE.lat, OFFICE.lng, parseFloat(lat), parseFloat(lng)));
-                setGpsLoading(false);
-            },
-            (error) => {
-                alert("GPS Error: " + error.message);
-                setGpsLoading(false);
-            },
-            { enableHighAccuracy: true }
-        );
-    };
+        navigator.geolocation.getCurrentPosition((pos) => {
+            const lat = pos.coords.latitude.toFixed(6);
+            const lng = pos.coords.longitude.toFixed(6);
+            const dist = haversine(Number(lat), Number(lng), OFFICE_LAT, OFFICE_LNG).toFixed(3);
+            setForm((prev) => ({
+                ...prev,
+                latitude: lat,
+                longitude: lng,
+                distance: dist,
+            }));
+        }, (err) => {
+            alert("GPS Error: " + err.message);
+        });
+    }
 
-    const handleAmcDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const dateStr = e.target.value;
-        setAmcDate(dateStr);
-        if (dateStr) {
-            const date = new Date(dateStr);
-            const start = new Date(date.getFullYear(), 0, 0);
-            const diff = date.getTime() - start.getTime();
-            const oneDay = 1000 * 60 * 60 * 24;
-            const day = Math.floor(diff / oneDay);
-            setDayOfYear(day.toString());
-        }
-    };
-
-    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setLoading(true);
 
-        const formData = new FormData(e.currentTarget);
-        // Append calculated fields if missing from input
-        if (!formData.get('distance')) formData.append('distance', distance);
+        const formData = new FormData();
+        // Map form state to FormData expected by Server Action
+        Object.entries(form).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
 
         try {
             await createManualContract(formData);
@@ -91,108 +96,71 @@ export default function NewContractPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6 font-mono">AMC Entry Form v1.1</h1>
-            <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="max-w-md mx-auto py-10">
+            <h1 className="text-2xl font-bold text-gray-900 mb-6 font-mono text-center">AMC Entry Form v1.1</h1>
+            <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-lg shadow-md text-sm border border-gray-200">
 
-                {/* Section 1: Identity */}
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-1">1. Identity & Location</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700">Location Name *</label>
-                            <input name="locationName" type="text" required placeholder="Display Name" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
+                <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">Identity</h3>
+                    <input name="licenseNumber" value={form.licenseNumber} onChange={handleChange} placeholder="License No *" required className="input w-full border rounded px-3 py-2" />
+                    <input name="graNumber" value={form.graNumber} onChange={handleChange} placeholder="GRA No *" required className="input w-full border rounded px-3 py-2" />
+                    <input name="locationName" value={form.locationName} onChange={handleChange} placeholder="Location Name *" required className="input w-full border rounded px-3 py-2" />
+                    <input name="phone" value={form.phone} onChange={handleChange} placeholder="Contact No (050...) *" required className="input w-full border rounded px-3 py-2" />
+                    <input name="customerName" value={form.customerName} onChange={handleChange} placeholder="Customer Name (Optional)" className="input w-full border rounded px-3 py-2" />
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">Location (GPS)</h3>
+                    <div className="flex gap-2">
+                        <input name="latitude" value={form.latitude} onChange={handleChange} placeholder="Latitude *" required className="input flex-1 border rounded px-3 py-2 bg-gray-50" />
+                        <input name="longitude" value={form.longitude} onChange={handleChange} placeholder="Longitude *" required className="input flex-1 border rounded px-3 py-2 bg-gray-50" />
+                        <button type="button" onClick={handleGPS} className="px-3 py-2 bg-blue-100 text-blue-700 rounded text-xs font-medium hover:bg-blue-200 whitespace-nowrap">
+                            📍 Use GPS
+                        </button>
+                    </div>
+                    <input name="distance" value={form.distance} onChange={handleChange} placeholder="Distance (km) *" required className="input w-full border rounded px-3 py-2 bg-gray-50" readOnly />
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b pb-1">Lifecycle</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1">AMC Date (Start)</label>
+                            <input name="amcDate" type="date" value={form.amcDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">License No *</label>
-                            <input name="licenseNumber" type="text" required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">GRA No *</label>
-                            <input name="graNumber" type="text" required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700">Customer Name (Optional)</label>
-                            <input name="customerName" type="text" placeholder="Auto-generated if empty" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Contact No *</label>
-                            <input name="phone" type="tel" required placeholder="050..." className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
+                            <label className="text-xs text-gray-500 block mb-1">Renewal Date</label>
+                            <input name="renewalDate" type="date" value={form.renewalDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
                         </div>
                     </div>
-                </div>
 
-                {/* Section 2: GPS & Distance */}
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-1">2. GPS Coordinates</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Latitude *</label>
-                            <input name="latitude" type="number" step="any" required value={coords.lat} onChange={e => setCoords({ ...coords, lat: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-50 sm:text-sm border p-2" />
+                            <label className="text-xs text-gray-500 block mb-1">Day (1-366)</label>
+                            <input name="day" type="number" min="1" max="366" value={form.day} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Longitude *</label>
-                            <input name="longitude" type="number" step="any" required value={coords.lng} onChange={e => setCoords({ ...coords, lng: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-50 sm:text-sm border p-2" />
-                        </div>
-                        <div className="col-span-2 flex justify-between items-center">
-                            <button type="button" onClick={handleGps} disabled={gpsLoading} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
-                                {gpsLoading ? 'Locating...' : '📍 Use GPS'}
-                            </button>
-                            <div className="text-right">
-                                <label className="block text-xs font-medium text-gray-500 uppercase">Distance from Office</label>
-                                <div className="text-lg font-bold text-gray-900">{distance ? `${distance} km` : '-'}</div>
-                                <input type="hidden" name="distance" value={distance} />
-                            </div>
+                            <label className="text-xs text-gray-500 block mb-1">Last Renewed</label>
+                            <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
                         </div>
                     </div>
+
+                    <select name="status" value={form.status} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-white">
+                        <option value="">Select Status *</option>
+                        <option value="active">Active</option>
+                        <option value="due_soon">Due Soon</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="expired">Expired</option>
+                        <option value="renewed">Renewed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+
+                    <input name="amount" type="number" step="0.01" value={form.amount} onChange={handleChange} placeholder="Contract Value (AED)" className="input w-full border rounded px-3 py-2" />
                 </div>
 
-                {/* Section 3: Lifecycle */}
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-1">3. Contract Lifecycle</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">AMC Date (Start) *</label>
-                            <input name="amcDate" type="date" required value={amcDate} onChange={handleAmcDateChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Renewal Date (End) *</label>
-                            <input name="renewalDate" type="date" required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Day of Year *</label>
-                            <input name="day" type="number" required min="1" max="366" value={dayOfYear} readOnly className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm sm:text-sm border p-2 cursor-not-allowed" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Last Renewed *</label>
-                            <input name="renewedDate" type="date" required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Status *</label>
-                            <select name="status" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
-                                <option value="active">Active</option>
-                                <option value="due_soon">Due Soon</option>
-                                <option value="overdue">Overdue</option>
-                                <option value="expired">Expired</option>
-                                <option value="renewed">Renewed</option>
-                                <option value="cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Value (AED)</label>
-                            <input name="amount" type="number" step="0.01" placeholder="0.00" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="pt-4 flex justify-end gap-3">
-                    <button type="button" onClick={() => router.back()} className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" disabled={loading} className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
-                        {loading ? 'Saving Entry...' : '✅ Save Entry'}
-                    </button>
-                </div>
+                <button type="submit" disabled={loading} className="w-full px-4 py-3 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-md transition-colors disabled:opacity-50">
+                    {loading ? 'Saving Entry...' : '✅ Save Entry'}
+                </button>
             </form>
         </div>
     );
