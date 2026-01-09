@@ -1,9 +1,11 @@
 'use client';
 
 import { createManualContract, searchCustomers } from '@/lib/actions';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+// Hardcoded Office Location (Al Twar/Qusais area approx)
+// Update these coordinates to your actual office location to get 0.000 when testing at desk.
 const OFFICE_LAT = 25.800000;
 const OFFICE_LNG = 55.950000;
 
@@ -23,6 +25,8 @@ export default function NewContractPage() {
     const [loading, setLoading] = useState(false);
     const [suggestions, setSuggestions] = useState<any[]>([]);
 
+    const [duration, setDuration] = useState(12); // Default 1 Year (12 months)
+
     const [form, setForm] = useState({
         licenseNumber: '',
         graNumber: '',
@@ -39,6 +43,20 @@ export default function NewContractPage() {
         distance: '',
         amount: ''
     });
+
+    // Auto-calculate Renewal Date whenever AMC Date or Duration changes
+    useEffect(() => {
+        if (form.amcDate && duration) {
+            const start = new Date(form.amcDate);
+            const end = new Date(start);
+            end.setMonth(start.getMonth() + duration);
+            // Subtract 1 day for standard contract logic (e.g. Jan 1 to Dec 31)
+            end.setDate(end.getDate() - 1);
+
+            const renewalStr = end.toISOString().split('T')[0];
+            setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+        }
+    }, [form.amcDate, duration]);
 
     // Search Logic
     const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,7 +190,12 @@ export default function NewContractPage() {
                             📍 Use GPS
                         </button>
                     </div>
-                    <input name="distance" value={form.distance} onChange={handleChange} placeholder="Distance (km) *" required className="input w-full border rounded px-3 py-2 bg-gray-50" readOnly />
+                    <div className="flex justify-between items-center bg-gray-50 border rounded px-3 py-2">
+                        <span className="text-gray-500">Distance from Office</span>
+                        <input name="distance" value={form.distance} onChange={handleChange} placeholder="0.000" required className="bg-transparent text-right w-20 outline-none font-mono font-bold text-gray-900" readOnly />
+                        <span className="ml-1 text-gray-500">km</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-right">Straight-line distance from 25.80, 55.95</p>
                 </div>
 
                 <div className="space-y-3">
@@ -183,23 +206,42 @@ export default function NewContractPage() {
                             <input name="amcDate" type="date" value={form.amcDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
                         </div>
                         <div>
+                            <label className="text-xs text-gray-500 block mb-1">Duration</label>
+                            <select
+                                value={duration}
+                                onChange={(e) => setDuration(Number(e.target.value))}
+                                className="input w-full border rounded px-3 py-2 bg-white"
+                            >
+                                <option value={3}>3 Months</option>
+                                <option value={6}>6 Months</option>
+                                <option value={12}>1 Year</option>
+                                <option value={24}>2 Years</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
                             <label className="text-xs text-gray-500 block mb-1">Renewal Date</label>
-                            <input name="renewalDate" type="date" value={form.renewalDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
+                            <input name="renewalDate" type="date" value={form.renewalDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" readOnly />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1">Day (1-366)</label>
+                            <input name="day" type="number" min="1" max="366" value={form.day} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" />
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Day (1-366)</label>
-                            <input name="day" type="number" min="1" max="366" value={form.day} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" />
-                        </div>
-                        <div>
                             <label className="text-xs text-gray-500 block mb-1">Last Renewed</label>
                             <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2" />
                         </div>
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1">Contract Value</label>
+                            <input name="amount" type="number" step="0.01" value={form.amount} onChange={handleChange} placeholder="AED 0.00" className="input w-full border rounded px-3 py-2" />
+                        </div>
                     </div>
 
-                    <select name="status" value={form.status} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-white">
+                    <select name="status" value={form.status} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-white mt-2">
                         <option value="">Select Status *</option>
                         <option value="active">Active</option>
                         <option value="due_soon">Due Soon</option>
@@ -208,8 +250,6 @@ export default function NewContractPage() {
                         <option value="renewed">Renewed</option>
                         <option value="cancelled">Cancelled</option>
                     </select>
-
-                    <input name="amount" type="number" step="0.01" value={form.amount} onChange={handleChange} placeholder="Contract Value (AED)" className="input w-full border rounded px-3 py-2" />
                 </div>
 
                 <button type="submit" disabled={loading} className="w-full px-4 py-3 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-md transition-colors disabled:opacity-50">
