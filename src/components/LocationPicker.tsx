@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, Popup, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -51,14 +51,33 @@ export default function LocationPicker({ initialLat, initialLng, onSelect, onCan
                 <div className="flex-1 relative">
                     <MapContainer
                         center={defaultPosition}
-                        zoom={13}
+                        zoom={15} // Increased zoom for more detail
                         scrollWheelZoom={true}
                         style={{ height: '100%', width: '100%' }}
                     >
-                        <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
+                        <LayersControl position="topright">
+                            <LayersControl.BaseLayer checked name="Google Hybrid (Detailed)">
+                                <TileLayer
+                                    url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+                                    attribution="Google Maps"
+                                    maxZoom={20}
+                                />
+                            </LayersControl.BaseLayer>
+                            <LayersControl.BaseLayer name="Google Streets">
+                                <TileLayer
+                                    url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                                    attribution="Google Maps"
+                                    maxZoom={20}
+                                />
+                            </LayersControl.BaseLayer>
+                            <LayersControl.BaseLayer name="OpenStreetMap">
+                                <TileLayer
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                />
+                            </LayersControl.BaseLayer>
+                        </LayersControl>
+
                         <LocationMarker position={position} setPosition={setPosition} />
                     </MapContainer>
                 </div>
