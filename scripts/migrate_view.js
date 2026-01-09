@@ -23,6 +23,8 @@ const queries = [
   // 5b. GRA & License Numbers (User Request)
   `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS gra_number text;`,
   `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS license_number text;`,
+  `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS phone text;`,
+  `ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS area text;`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_gra ON public.customers(gra_number) WHERE gra_number IS NOT NULL;`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_license ON public.customers(license_number) WHERE license_number IS NOT NULL;`,
 
