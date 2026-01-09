@@ -73,17 +73,18 @@ export default function ContractsList() {
                         <span>↓</span> Export CSV
                     </button>
                 </div>
-
-                {loading ? (
-                    <p className="text-gray-500">Loading contracts...</p>
-                ) : (
-                    <div className="space-y-3">
-                        {contracts.length === 0 && <p className="text-gray-500">No contracts found.</p>}
-                        {contracts.map((c) => (
-                            <ContractRow key={c.id} contract={c} />
-                        ))}
-                    </div>
-                )}
             </div>
-            );
+
+            {loading ? (
+                <p className="text-gray-500">Loading contracts...</p>
+            ) : (
+                <div className="space-y-3">
+                    {contracts.length === 0 && <p className="text-gray-500">No contracts found.</p>}
+                    {contracts.map((c) => (
+                        <ContractRow key={c.id} contract={c} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
