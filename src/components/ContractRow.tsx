@@ -1,13 +1,15 @@
 import Link from 'next/link';
 import { MouseEvent } from 'react';
+import { TrashIcon } from '@heroicons/react/24/outline';
 
 interface ContractRowProps {
     contract: any;
     isSelected?: boolean;
     onToggle?: (id: number) => void;
+    onDelete?: (id: number) => void;
 }
 
-export default function ContractRow({ contract, isSelected, onToggle }: ContractRowProps) {
+export default function ContractRow({ contract, isSelected, onToggle, onDelete }: ContractRowProps) {
 
     // Calculate days since last AMC using vanilla JS to avoid date-fns dependency
     let daysSinceLast = 'N/A';
@@ -22,6 +24,14 @@ export default function ContractRow({ contract, isSelected, onToggle }: Contract
     const handleCheckboxClick = (e: MouseEvent) => {
         e.stopPropagation(); // Prevent Link navigation
         if (onToggle) onToggle(contract.id);
+    };
+
+    const handleDeleteClick = (e: MouseEvent) => {
+        e.preventDefault(); // Prevent Link navigation
+        e.stopPropagation();
+        if (onDelete && confirm(`Are you sure you want to delete contract for ${contract.customer_name}?`)) {
+            onDelete(contract.id);
+        }
     };
 
     return (
@@ -77,6 +87,17 @@ export default function ContractRow({ contract, isSelected, onToggle }: Contract
                         >
                             {contract.cycle_status}
                         </span>
+
+                        {/* Single Delete Button */}
+                        {onDelete && (
+                            <button
+                                onClick={handleDeleteClick}
+                                className="ml-2 text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition"
+                                title="Delete Contract"
+                            >
+                                <TrashIcon className="w-5 h-5" />
+                            </button>
+                        )}
                     </div>
                 </div>
             </Link>

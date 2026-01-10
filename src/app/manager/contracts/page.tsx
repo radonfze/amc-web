@@ -114,22 +114,34 @@ function ContractsListContent() {
         if (!confirm(`Are you sure you want to delete ${selectedIds.size} contracts? This action cannot be undone.`)) return;
 
         const idsToDelete = Array.from(selectedIds);
-        
-        // Delete request 
+        await deleteContracts(idsToDelete);
+        setSelectedIds(new Set());
+    };
+
+    const handleSingleDelete = async (id: number) => {
+        // Confirmation is handled inside ContractRow to avoid double confirm
+        await deleteContracts([id]);
+    };
+
+    const deleteContracts = async (ids: number[]) => {
         const { error } = await supabase
-            .from('amc_contracts') // Delete from base table, not view
+            .from('amc_contracts') 
             .delete()
-            .in('id', idsToDelete);
+            .in('id', ids);
 
         if (error) {
             alert('Error deleting contracts: ' + error.message);
         } else {
             // Optimistic update
-            const remaining = contracts.filter(c => !selectedIds.has(c.id));
+            const remaining = contracts.filter(c => !ids.includes(c.id));
             setContracts(remaining);
-            setFilteredContracts(remaining.filter(c => !selectedIds.has(c.id)));
-            setSelectedIds(new Set());
-            alert('Contracts deleted successfully.');
+            // setFilteredContracts is updated via useEffect on `contracts` change or manually if needed
+            // But doing it manual here for immediate feedback, deferring to useEffect is safer but slower UI
+            // However, contracts state update triggers useEffect, so:
+            setContracts(remaining); 
+            
+            // Wait a tick or just alert
+            alert('Contract(s) deleted successfully.');
             // Reload to be safe
             loadContracts(); 
         }
@@ -187,7 +199,7 @@ function ContractsListContent() {
                                 onClick={handleBulkDelete}
                                 className="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-red-700 flex items-center gap-2"
                             >
-                                <TrashIcon className="w-4 h-4" /> Delete All
+                                <TrashIcon className="w-4 h-4" /> {selectedIds.size === 1 ? 'Delete' : 'Delete All'}
                             </button>
                             <button
                                 onClick={() => setSelectedIds(new Set())}
@@ -258,6 +270,7 @@ function ContractsListContent() {
                             contract={c} 
                             isSelected={selectedIds.has(c.id)}
                             onToggle={toggleSelect}
+                            onDelete={handleSingleDelete}
                         />
                     ))}
                 </div>
