@@ -41,6 +41,7 @@ const queries = [
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS latitude decimal CHECK (latitude BETWEEN -90 AND 90);`,
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS longitude decimal CHECK (longitude BETWEEN -180 AND 180);`,
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS distance_km decimal CHECK (distance_km >= 0 AND distance_km <= 500);`,
+  `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS google_plus_code text;`,
 
   `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS visit_day integer CHECK (visit_day BETWEEN 1 AND 366);`,
   `ALTER TABLE public.amc_contracts ADD COLUMN IF NOT EXISTS last_renewed_date date;`,
