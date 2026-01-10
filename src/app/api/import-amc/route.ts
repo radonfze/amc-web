@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+// Use the ADMIN client to bypass RLS for imports
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 
 function parseDateToISO(raw: string | null | undefined): string | null {
     if (!raw) return null;
@@ -314,7 +315,6 @@ export async function POST(req: Request) {
                         }
                     } else {
                          contractId = existingContract.id;
-                         // Just link it, don't duplicate
                     }
                 } else {
                     notRenewedCount++;
