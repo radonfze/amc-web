@@ -3,7 +3,6 @@
 import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { differenceInDays, parseISO } from 'date-fns';
 
 // Fix for default marker icon missing in Leaflet + Next.js/Webpack
 // @ts-ignore
@@ -101,9 +100,6 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                      const isExpired = c.status === 'expired' || (c.end_date && new Date(c.end_date) < new Date());
                      
                      // 2. Overdue Visit (>90 days orange, >80 days yellow)
-                     // Only apply if NOT expired (Expired takes precedence presumably?)
-                     // User said: "if amc days more than 80+ days marker yellow, 90+ orange, expired red"
-                     
                      let markerIcon = greenIcon;
                      if (isExpired) {
                         markerIcon = redIcon;
