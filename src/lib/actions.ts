@@ -20,8 +20,7 @@ export async function createManualContract(formData: FormData) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized: Please login first");
 
-    // Fields from Form v1.1
-    // Customer Name is now mandatory and handled strictly
+    // Fields from Form v1.2
     const customerName = formData.get('customerName') as string;
     const phone = formData.get('phone') as string;
     const locationName = formData.get('locationName') as string;
@@ -37,13 +36,42 @@ export async function createManualContract(formData: FormData) {
     // Lifecycle
     const amcDate = formData.get('amcDate') as string;
     const renewalDate = formData.get('renewalDate') as string;
-    const visitDay = parseInt(formData.get('day') as string) || 1;
+    
+    // visit_day logic: Derive from amcDate if not provided (Form v1.2 removed the input)
+    let visitDay = 1;
+    if (amcDate) {
+        const d = new Date(amcDate);
+        if (!isNaN(d.getTime())) {
+            const start = new Date(d.getFullYear(), 0, 0);
+            const diff = d.getTime() - start.getTime();
+            const oneDay = 1000 * 60 * 60 * 24;
+            visitDay = Math.floor(diff / oneDay);
+        }
+    }
+
     let lastRenewed: string | null = formData.get('renewedDate') as string;
     if (!lastRenewed || lastRenewed.trim() === '') lastRenewed = null; 
     const status = formData.get('status') as string;
-    const amount = parseFloat(formData.get('amount') as string) || 0;
+    
+    // Financials
     const govtFees = parseFloat(formData.get('govtFees') as string) || 0;
     const amcValue = parseFloat(formData.get('amcValue') as string) || 0;
+    const fineAmount = parseFloat(formData.get('fineAmount') as string) || 0;
+    const paidAmount = parseFloat(formData.get('paidAmount') as string) || 0;
+    
+    // Total should match frontend, but let's recalculate or trust frontend?
+    // Frontend: Amount = Govt + AMC + Fine
+    // Backend should ensure consistency or take 'amount' as single source?
+    // Let's use individual components to sum up for 'amount_total' to be safe, 
+    // OR trust 'amount' param if passed (frontend calculated it).
+    // The table has 'amount_total'
+    const amountTotal = parseFloat(formData.get('amount') as string) || (govtFees + amcValue + fineAmount);
+    const balanceAmount = amountTotal - paidAmount;
+
+    // Infer Payment Status
+    let paymentStatus = 'pending';
+    if (paidAmount >= amountTotal && amountTotal > 0) paymentStatus = 'paid_online'; // Assuming paid full
+    else if (paidAmount > 0) paymentStatus = 'partial';
 
     if (!customerName) throw new Error("Customer Name is required");
 
@@ -130,10 +158,13 @@ export async function createManualContract(formData: FormData) {
                 start_date: amcDate,
                 end_date: renewalDate,
                 status: status,
-                amount_total: amount,
+                amount_total: amountTotal,
                 govt_fees: govtFees,
                 amc_value: amcValue,
-                payment_status: 'pending',
+                fine_amount: fineAmount,
+                paid_amount: paidAmount,
+                balance_amount: balanceAmount,
+                payment_status: paymentStatus,
                 cycle_status: 'ok',
                 visit_day: visitDay,
                 last_renewed_date: lastRenewed,
@@ -154,4 +185,3 @@ export async function createManualContract(formData: FormData) {
         throw new Error(e.message || "An unexpected error occurred");
     }
 }
-

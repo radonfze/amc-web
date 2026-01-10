@@ -6,28 +6,43 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import ContractDetailCard from '@/components/ContractDetailCard';
 import { AuditLog } from '@/components/AuditLog';
+import { useRouter } from 'next/navigation';
+import { 
+  PrinterIcon, 
+  PencilIcon, 
+  EyeIcon, 
+  TrashIcon, 
+  XCircleIcon 
+} from '@heroicons/react/24/outline';
 
 export default function ContractPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
+    const router = useRouter();
     const [contract, setContract] = useState<any>(null);
     const [visits, setVisits] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [renewing, setRenewing] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
         async function load() {
-            const { data: c } = await supabase
+            const { data: c, error } = await supabase
                 .from('amc_contracts')
                 .select(`
           *,
           customer_locations (
              display_name,
-             customers ( id, name, contact_phone )
+             full_address,
+             customers ( id, name, contact_phone, license_number, contact_person, phone )
           ),
           users:technician_id ( name ) 
         `)
                 .eq('id', resolvedParams.id)
                 .single();
+
+            if (error) {
+                console.error("Error fetching contract:", error);
+            }
 
             if (c) {
                 setContract(c);
@@ -47,10 +62,8 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
         if (!confirm('Renew this contract for another year? This will create a new Active contract and archive this one.')) return;
         setRenewing(true);
 
-        // We can call an RPC function or a server action. 
-        // Since we created 'renew_contract' RPC in SQL:
         const newStart = new Date(contract.end_date);
-        newStart.setDate(newStart.getDate() + 1); // Start next day
+        newStart.setDate(newStart.getDate() + 1); 
 
         const { data: newId, error } = await supabase.rpc('renew_contract', {
             p_old_id: contract.id,
@@ -66,22 +79,88 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
         }
     }
 
-    if (loading) return <div className="p-8">Loading...</div>;
-    if (!contract) return <div className="p-8">Contract not found</div>;
+    async function handleCancel() {
+        if (!confirm('Are you sure you want to CANCEL this contract? This action cannot be easily undone.')) return;
+        setActionLoading(true);
+        const { error } = await supabase
+            .from('amc_contracts')
+            .update({ status: 'cancelled', terminated_at: new Date().toISOString() })
+            .eq('id', contract.id);
+
+        if (error) {
+            alert('Failed to cancel: ' + error.message);
+        } else {
+            setContract({ ...contract, status: 'cancelled' });
+        }
+        setActionLoading(false);
+    }
+
+    async function handleDelete() {
+        if (!confirm('DANGER: This will PERMANENTLY DELETE the contract and its history. Are you absolutely sure?')) return;
+        setActionLoading(true);
+        const { error } = await supabase
+            .from('amc_contracts')
+            .delete()
+            .eq('id', contract.id);
+
+        if (error) {
+            alert('Failed to delete: ' + error.message);
+            setActionLoading(false);
+        } else {
+            router.push('/manager/contracts');
+        }
+    }
+
+    if (loading) return <div className="p-8">Loading Contract Details...</div>;
+    // Show a better error or empty state if not found
+    if (!contract) return (
+        <div className="p-8 text-center flex flex-col items-center justify-center h-full">
+            <div className="bg-gray-100 p-6 rounded-full mb-4">
+                <XCircleIcon className="w-12 h-12 text-gray-400" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-700">Contract Not Found</h2>
+            <p className="text-gray-500 mt-2 mb-6 max-w-sm">The contract #{resolvedParams.id} could not be found. It may have been deleted or you may not have permission to view it.</p>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => router.push('/manager/contracts')}>Back to Contracts List</Button>
+        </div>
+    );
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-start">
-                <h1 className="text-2xl font-bold text-gray-900">Contract #{contract.id}</h1>
-                <div className="space-x-2">
-                    {contract.status === 'active' || contract.status === 'overdue' || contract.status === 'due_soon' ? (
-                        <Button onClick={handleRenew} disabled={renewing} className="bg-green-600 hover:bg-green-700">
-                            {renewing ? 'Renewing...' : 'Renew Contract'}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b pb-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        Contract #{contract.id}
+                        <EyeIcon className="w-5 h-5 text-gray-400" title="Viewing Mode" />
+                    </h1>
+                    <p className="text-sm text-gray-500">
+                        Client: <span className="font-medium text-gray-900">{contract.customers?.name || contract.customer_name}</span>
+                    </p>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => window.print()} title="Print Contract">
+                        <PrinterIcon className="w-4 h-4 mr-1" /> Print
+                    </Button>
+                    {/* Placeholder for Edit - assumes /edit route or similar */}
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/manager/contracts/${contract.id}/edit`)} disabled={contract.status === 'cancelled' || contract.status === 'renewed'} title="Edit Contract">
+                         <PencilIcon className="w-4 h-4 mr-1" /> Edit
+                    </Button>
+                    
+                    {contract.status === 'active' || contract.status === 'due_soon' || contract.status === 'overdue' ? (
+                         <>
+                            <Button size="sm" onClick={handleRenew} disabled={renewing} className="bg-green-600 hover:bg-green-700 text-white shadow-sm">
+                                {renewing ? 'Renewing...' : 'Renew'}
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={handleCancel} disabled={actionLoading} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+                                <XCircleIcon className="w-4 h-4 mr-1" /> Cancel
+                            </Button>
+                         </>
+                    ) : null}
+
+                    {(contract.status === 'draft' || contract.status === 'cancelled') && (
+                        <Button variant="ghost" size="sm" onClick={handleDelete} disabled={actionLoading} className="text-gray-400 hover:text-red-600 hover:bg-red-50">
+                            <TrashIcon className="w-4 h-4" />
                         </Button>
-                    ) : (
-                        <span className="px-3 py-1 bg-gray-200 rounded text-gray-600 font-medium capitalize">
-                            {contract.status}
-                        </span>
                     )}
                 </div>
             </div>
@@ -91,8 +170,9 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
                     <ContractDetailCard contract={contract} />
 
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                             <h3 className="font-bold text-gray-900">Visit History</h3>
+                            <span className="text-xs text-gray-500">{visits.length} visits</span>
                         </div>
                         {visits.length === 0 ? (
                             <div className="p-6 text-center text-gray-500 text-sm">No visits recorded yet.</div>

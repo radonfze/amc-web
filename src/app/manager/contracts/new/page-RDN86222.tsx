@@ -11,6 +11,8 @@ const LocationPicker = dynamic(() => import('@/components/LocationPicker'), {
 });
 
 // Hardcoded Office Location (Al Twar/Qusais area approx)
+// Update these coordinates to your actual office location to get 0.000 when testing at desk.
+// Hardcoded Office Location (Updated to User's location for 0 distance test)
 const OFFICE_LAT = 25.799156;
 const OFFICE_LNG = 55.970612;
 
@@ -32,7 +34,6 @@ export default function NewContractPage() {
     const [showMap, setShowMap] = useState(false);
 
     const [duration, setDuration] = useState(12); // Default 1 Year (12 months)
-    const [fineRate, setFineRate] = useState(200); // Default 200 fine per month
 
     const [form, setForm] = useState({
         licenseNumber: '',
@@ -44,81 +45,31 @@ export default function NewContractPage() {
         longitude: '',
         amcDate: '',
         renewalDate: '',
-        renewedDate: '', // Previous Expiry Date
+        day: '',
+        renewedDate: '',
         status: '',
         distance: '',
         govtFees: '',
         amcValue: '',
-        fineAmount: '0.00',
-        amount: '',
-        paidAmount: '0.00',
-        balanceAmount: ''
+        amount: ''
     });
-
-    const [daysFromExpiry, setDaysFromExpiry] = useState<number | null>(null);
 
     // Auto-calculate Renewal Date whenever AMC Date or Duration changes
     useEffect(() => {
         if (form.amcDate && duration) {
             const start = new Date(form.amcDate);
+            // Handle date safety
             if (!isNaN(start.getTime())) {
                 const end = new Date(start);
                 end.setMonth(start.getMonth() + duration);
+                // Subtract 1 day for standard contract logic (e.g. Jan 1 to Dec 31)
                 end.setDate(end.getDate() - 1);
+
                 const renewalStr = end.toISOString().split('T')[0];
                 setForm(prev => ({ ...prev, renewalDate: renewalStr }));
             }
         }
     }, [form.amcDate, duration]);
-
-    // Auto-calculate Fine when AMC Date or Renewed Date changes
-    useEffect(() => {
-        if (form.amcDate && form.renewedDate) {
-            const start = new Date(form.amcDate);
-            const prev = new Date(form.renewedDate);
-            
-            if (!isNaN(start.getTime()) && !isNaN(prev.getTime())) {
-                const diffTime = start.getTime() - prev.getTime();
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                setDaysFromExpiry(diffDays);
-
-                let fine = 0;
-                if (diffDays > 30) {
-                    // Logic: Grace period 30 days. After that, charge for every month late?
-                    // "after 30 days everymonth 160/200 each month"
-                    // Assuming if days <= 30, fine 0.
-                    // If days 31-60? 1 month fine? 
-                    // Let's use: months = ceil((days - 30) / 30)
-                    const lateDays = diffDays - 30;
-                    const monthsLate = Math.ceil(lateDays / 30);
-                    fine = monthsLate * fineRate;
-                }
-                
-                // Update fine and totals
-                setForm(prev => {
-                    const newFine = fine.toFixed(2);
-                    const g = parseFloat(prev.govtFees) || 0;
-                    const a = parseFloat(prev.amcValue) || 0;
-                    const total = g + a + fine;
-                    const paid = parseFloat(prev.paidAmount) || 0;
-                    
-                    return {
-                        ...prev,
-                        fineAmount: newFine,
-                        amount: total.toFixed(2),
-                        balanceAmount: (total - paid).toFixed(2)
-                    };
-                });
-            }
-        } else {
-            setDaysFromExpiry(null);
-            setForm(prev => ({ ...prev, fineAmount: '0.00' }));
-        }
-    }, [form.amcDate, form.renewedDate, fineRate]); // Depend on fineRate too
-
-    const handleFineRateToggle = () => {
-        setFineRate(prev => (prev === 200 ? 160 : 200));
-    };
 
     // Search Logic
     const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,23 +101,27 @@ export default function NewContractPage() {
 
     function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
         const { name, value } = e.target;
+        // Customer Name handled by search input specifically
         if (name !== 'customerName') {
             setForm((prev) => {
                 const updated = { ...prev, [name]: value };
 
                 // Auto-calc Total Amount
-                if (['govtFees', 'amcValue', 'fineAmount', 'paidAmount'].includes(name)) {
+                if (name === 'govtFees' || name === 'amcValue') {
                     const g = parseFloat(name === 'govtFees' ? value : prev.govtFees) || 0;
                     const a = parseFloat(name === 'amcValue' ? value : prev.amcValue) || 0;
-                    const f = parseFloat(name === 'fineAmount' ? value : prev.fineAmount) || 0;
-                    
-                    const total = g + a + f;
-                    updated.amount = total.toFixed(2);
-                    
-                    const paid = parseFloat(name === 'paidAmount' ? value : prev.paidAmount) || 0;
-                    updated.balanceAmount = (total - paid).toFixed(2);
+                    updated.amount = (g + a).toFixed(2);
                 }
-                
+
+                // Auto-calc Day
+                if (name === 'amcDate' && value) {
+                    const date = new Date(value);
+                    const start = new Date(date.getFullYear(), 0, 0);
+                    const diff = date.getTime() - start.getTime();
+                    const oneDay = 1000 * 60 * 60 * 24;
+                    const day = Math.floor(diff / oneDay);
+                    updated.day = day.toString();
+                }
                 return updated;
             });
         }
@@ -200,9 +155,6 @@ export default function NewContractPage() {
         Object.entries(form).forEach(([key, value]) => {
             formData.append(key, value);
         });
-        
-        // Pass fineRate and others if needed by backend, though backend just takes fineAmount
-        formData.append('fineRate', fineRate.toString());
 
         try {
             await createManualContract(formData);
@@ -214,8 +166,8 @@ export default function NewContractPage() {
     }
 
     return (
-        <div className="max-w-xl mx-auto py-10">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6 font-mono text-center">AMC Entry Form v1.2</h1>
+        <div className="max-w-md mx-auto py-10">
+            <h1 className="text-2xl font-bold text-gray-900 mb-6 font-mono text-center">AMC Entry Form v1.1</h1>
             <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-lg shadow-md text-sm border border-gray-200" onClick={() => setSuggestions([])}>
 
                 <div className="space-y-3 relative">
@@ -259,11 +211,10 @@ export default function NewContractPage() {
                             📍 Use GPS
                         </button>
                         <button type="button" onClick={() => setShowMap(true)} className="px-3 py-2 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200 whitespace-nowrap">
-                            🗺️ Map
+                            🗺️ Pick on Map
                         </button>
                     </div>
-                    {/* Map Component would go here if uncommented in original */}
-                     {showMap && LocationPicker && (
+                    {showMap && LocationPicker && (
                         <LocationPicker
                             initialLat={parseFloat(form.latitude) || OFFICE_LAT}
                             initialLng={parseFloat(form.longitude) || OFFICE_LNG}
@@ -285,6 +236,7 @@ export default function NewContractPage() {
                         <input name="distance" value={form.distance} onChange={handleChange} placeholder="0.000" required className="bg-transparent text-right w-20 outline-none font-mono font-bold text-gray-900" readOnly />
                         <span className="ml-1 text-gray-500">km</span>
                     </div>
+                    <p className="text-[10px] text-gray-400 text-right">Straight-line distance from 25.80, 55.95</p>
                 </div>
 
                 <div className="space-y-3">
@@ -314,66 +266,35 @@ export default function NewContractPage() {
                             <input name="renewalDate" type="date" value={form.renewalDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" readOnly />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-500 block mb-1">Expired Date (Previous)</label>
-                             <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" placeholder="Previous Expiry" />
+                            <label className="text-xs text-gray-500 block mb-1">Day (1-366)</label>
+                            <input name="day" type="number" min="1" max="366" value={form.day} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" />
                         </div>
                     </div>
-                    
-                    <div className="bg-yellow-50 p-2 rounded border border-yellow-200">
-                         <div className="flex justify-between items-center mb-1">
-                            <label className="text-xs text-yellow-700 font-semibold">Fine Calculation</label>
-                             <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-500">Rate:</span>
-                                <button type="button" onClick={handleFineRateToggle} className="text-[10px] px-2 py-0.5 bg-white border rounded shadow-sm">
-                                    {fineRate}/month
-                                </button>
-                             </div>
-                         </div>
-                         <div className="flex gap-2">
-                             <div className="flex-1">
-                                 <label className="text-[10px] text-gray-500 block">Days from Expiry</label>
-                                 <input value={daysFromExpiry !== null ? daysFromExpiry : ''} readOnly className="input w-full border rounded px-2 py-1 bg-gray-100" placeholder="-" />
-                             </div>
-                             <div className="flex-1">
-                                 <label className="text-[10px] text-gray-500 block">Fine Amount</label>
-                                 <input name="fineAmount" type="number" step="0.01" value={form.fineAmount} onChange={handleChange} className="input w-full border rounded px-2 py-1 bg-white font-medium text-red-600" />
-                             </div>
-                         </div>
-                         <p className="text-[10px] text-gray-400 mt-1">
-                             {daysFromExpiry !== null && daysFromExpiry <= 30 ? "Within 30 days grace period (No Fine)" : daysFromExpiry !== null ? `Late by ${Math.ceil((daysFromExpiry - 30) / 30)} months` : "Enter AMC Date & Previous Expiry"}
-                         </p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1">Expired Date (Previous)</label>
+                            <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" />
+                        </div>
+                        <div>
+                            {/* Placeholder to keep grid alignment or empty */}
+                        </div>
                     </div>
 
                     <div className="bg-gray-50 p-2 rounded border border-gray-200 space-y-2">
                         <label className="text-xs font-semibold text-gray-500 uppercase">Contract Value Breakdown</label>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             <div>
-                                <label className="text-[10px] text-gray-500 block">Govt</label>
+                                <label className="text-[10px] text-gray-500 block">Govt Charge</label>
                                 <input name="govtFees" type="number" step="0.01" value={form.govtFees} onChange={handleChange} placeholder="0.00" className="input w-full border rounded px-2 py-1" />
                             </div>
-                           
                             <div>
-                                <label className="text-[10px] text-gray-500 block">AMC</label>
+                                <label className="text-[10px] text-gray-500 block">Our AMC</label>
                                 <input name="amcValue" type="number" step="0.01" value={form.amcValue} onChange={handleChange} placeholder="0.00" className="input w-full border rounded px-2 py-1" />
                             </div>
-                             <div>
-                                <label className="text-[10px] text-gray-500 block text-red-500">Fine</label>
-                                <input name="fineAmount" type="number" step="0.01" value={form.fineAmount} readOnly className="input w-full border rounded px-2 py-1 bg-gray-50 text-red-500" />
-                            </div>
                             <div>
-                                <label className="text-[10px] text-gray-500 block font-bold">Total</label>
+                                <label className="text-[10px] text-gray-500 block">Total</label>
                                 <input name="amount" type="number" step="0.01" value={form.amount} readOnly className="input w-full border rounded px-2 py-1 bg-gray-100 font-bold text-gray-700" />
-                            </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-2 border-t pt-2 mt-2">
-                            <div>
-                                <label className="text-[10px] text-gray-500 block">Paid Amount</label>
-                                <input name="paidAmount" type="number" step="0.01" value={form.paidAmount} onChange={handleChange} className="input w-full border rounded px-2 py-1 bg-green-50 text-green-700 font-medium" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] text-gray-500 block">Balance</label>
-                                <input name="balanceAmount" type="number" step="0.01" value={form.balanceAmount} readOnly className="input w-full border rounded px-2 py-1 bg-gray-100 font-bold text-gray-900" />
                             </div>
                         </div>
                     </div>
