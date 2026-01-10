@@ -157,7 +157,6 @@ export async function POST(req: Request) {
                 }
 
                 // Fix swapped Lat/Lng (Basic Heuristic for UAE: Lat ~22-26, Lng ~51-56)
-                // If Lat > 30, it might be swapped or crazy. If Lat < 20, same.
                 if ((lat < 20 || lat > 30) && (lng >= 20 && lng <= 30)) {
                     const temp = lat; lat = lng; lng = temp;
                 }
@@ -204,6 +203,13 @@ export async function POST(req: Request) {
                     newCustCount++;
                 } else {
                     existCustCount++;
+                    // UPDATE Existing Customer (if fields provided)
+                    if (!dryRun && cleanPhone && existingCustomer && existingCustomer.contact_phone !== cleanPhone) {
+                        await supabase
+                            .from('customers')
+                            .update({ contact_phone: cleanPhone })
+                            .eq('id', customerId);
+                    }
                 }
 
                 // Check for Existing Location
@@ -222,6 +228,13 @@ export async function POST(req: Request) {
 
                 if (existingLocation) {
                     locationId = existingLocation.id;
+                    // UPDATE Existing Location (Renewal Date is important)
+                    if (!dryRun && renewalDateISO && existingLocation.gov_renewal_date !== renewalDateISO) {
+                        await supabase
+                            .from('customer_locations')
+                            .update({ gov_renewal_date: renewalDateISO })
+                            .eq('id', locationId);
+                    }
                 } else {
                     // Create New Location
                     if (!dryRun) {
@@ -258,41 +271,57 @@ export async function POST(req: Request) {
                     // 4b. Auto-assign Technician
                     let techId: string | null = null;
                     if (allTechAreas) {
-                        // Simple exact match for now. Could be fuzzy later.
                         const match = allTechAreas.find(t => t.area && t.area.toLowerCase() === cleanLocationName?.toLowerCase());
                         if (match) techId = match.technician_id;
                     }
 
-                    if (!dryRun) {
-                        const { data: contract, error: contractErr } = await supabase
+                     // Check for duplicate contract
+                    let existingContract = null;
+                    if (locationId !== -1) {
+                         const { data: ec } = await supabase
                             .from('amc_contracts')
-                            .insert({
-                                customer_location_id: locationId,
-                                start_date: amcDateISO,
-                                end_date: end.toISOString(),
-                                status: 'active',
-                                amount_total: 1000,
-                                amount_police: 550,
-                                amount_company: 450,
-                                payment_status: 'pending',
-                                cycle_status: 'ok',
-                                next_due_date: due.toISOString(),
-                                last_effective_visit_date: amcDateISO,
-                                technician_id: techId
-                            })
                             .select('id')
-                            .single();
+                            .eq('customer_location_id', locationId)
+                            .eq('start_date', amcDateISO)
+                            .maybeSingle();
+                         existingContract = ec;
+                    }
 
-                        if (contractErr) throw new Error('Contract insert failed: ' + contractErr.message);
-                        contractId = contract.id;
-                        renewedCount++;
+                    if (!existingContract) {
+                        if (!dryRun) {
+                            const { data: contract, error: contractErr } = await supabase
+                                .from('amc_contracts')
+                                .insert({
+                                    customer_location_id: locationId,
+                                    start_date: amcDateISO,
+                                    end_date: end.toISOString(),
+                                    status: 'active',
+                                    amount_total: 1000,
+                                    amount_police: 550,
+                                    amount_company: 450,
+                                    payment_status: 'pending',
+                                    cycle_status: 'ok',
+                                    next_due_date: due.toISOString(),
+                                    last_effective_visit_date: amcDateISO,
+                                    technician_id: techId
+                                })
+                                .select('id')
+                                .single();
+
+                            if (contractErr) throw new Error('Contract insert failed: ' + contractErr.message);
+                            contractId = contract.id;
+                            renewedCount++;
+                        }
+                    } else {
+                         contractId = existingContract.id;
+                         // Just link it, don't duplicate
                     }
                 } else {
                     notRenewedCount++;
                 }
 
                 // --- 5. Undo Tracking ---
-                if (!dryRun && importRunId) {
+                if (!dryRun && importRunId && contractId) {
                     await supabase.from('import_run_items').insert({
                         import_run_id: importRunId,
                         customer_id: isNewCustomer ? customerId : null,
@@ -315,7 +344,6 @@ export async function POST(req: Request) {
                     success: false,
                     message: err.message || 'Unknown error',
                 });
-                // If not skipped, count as invalid
                 if (!rowResults[rowResults.length - 1].message.startsWith('Skipped')) {
                     invalidCount++;
                 }
@@ -324,19 +352,10 @@ export async function POST(req: Request) {
 
         // Update Import Run Summary & Quality Score
         if (!dryRun && importRunId) {
-            // Scores:
-            // 1. Validity: valid_rows / total_rows
-            // 2. Completeness: (valid_rows - skipped_rows) / total_rows ? 
-            //    Actually "fraction of rows with all required fields". 
-            //    My "skippedCount" tracks rows missing License/GRA or Coords. So "Completeness" ~ (Total - Skipped) / Total
-            // 3. Consistency: fraction of rows without auto-fixes? 
-            //    I don't track "auto-fixed" explicitly to db, but I can approximate or just use 1.0 for now if not tracking.
-            //    Let's use a simpler heuristic for MVP as I didn't add tracking for "is_fixed" in the loop.
-
             const total = rows.length || 1;
             const validity = validCount / total;
             const completeness = (total - skippedCount) / total;
-            const consistency = (validCount - invalidCount) / total; // Valid vs Invalid (errors)
+            const consistency = (validCount - invalidCount) / total; 
 
             const score = Math.floor((0.5 * validity + 0.3 * completeness + 0.2 * consistency) * 100);
 
