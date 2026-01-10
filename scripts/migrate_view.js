@@ -46,6 +46,14 @@ const queries = [
   `DROP POLICY IF EXISTS "Enable update for locations" ON public.customer_locations;`,
   `CREATE POLICY "Enable update for locations" ON public.customer_locations FOR UPDATE USING (auth.role() = 'authenticated');`,
 
+  // 6c. Fix Infinite Recursion on Users Table
+  // The 'users' table likely has a complex policy triggering itself via profiles. We simplify it.
+  `ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS "Enable read access for auth users" ON public.users;`,
+  `CREATE POLICY "Enable read access for auth users" ON public.users FOR SELECT USING (auth.role() = 'authenticated');`,
+  `DROP POLICY IF EXISTS "Enable update for users" ON public.users;`,
+  `CREATE POLICY "Enable update for users" ON public.users FOR UPDATE USING (auth.uid() = id);`,
+
   // 5c. Spec v1.1 Extensions (GPS, Distance, Cycle)
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS latitude decimal CHECK (latitude BETWEEN -90 AND 90);`,
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS longitude decimal CHECK (longitude BETWEEN -180 AND 180);`,
