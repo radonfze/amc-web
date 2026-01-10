@@ -125,7 +125,7 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                      // >80 days -> YELLOW
                      // Else -> GREEN
                      
-                     let markerIcon = greenIcon;
+                     let markerIcon: L.Icon | L.DivIcon = greenIcon;
                      if (isExpired) {
                         markerIcon = redCrossIcon;
                      } else if (daysSinceLast > 90) {
