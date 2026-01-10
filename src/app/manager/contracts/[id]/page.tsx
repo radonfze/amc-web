@@ -27,59 +27,71 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
 
     useEffect(() => {
         async function load() {
-             // 1. debug access 
-             console.log("Loading contract:", resolvedParams.id);
+            try {
+                // 1. Fetch Contract + Customer + Location ONLY (Safe fetch)
+                const { data: c, error } = await supabase
+                    .from('amc_contracts')
+                    .select(`
+                        *,
+                        customer_locations (
+                            display_name,
+                            full_address,
+                            customers ( id, name, contact_phone, license_number, contact_person, phone )
+                        )
+                    `)
+                    .eq('id', resolvedParams.id)
+                    .single();
 
-            // First, try a simple fetch to see if we can access the contract at all
-            const { data: simpleC, error: simpleError } = await supabase
-                .from('amc_contracts')
-                .select('id')
-                .eq('id', resolvedParams.id)
-                .single();
+                if (error) {
+                    console.error("Contract fetch error:", error);
+                    setErrorMsg(`Error loading contract: ${error.message} (${error.code})`);
+                    setLoading(false);
+                    return;
+                }
 
-            if (simpleError) {
-                console.error("Simple fetch error:", simpleError);
-                setErrorMsg(`Error accessing contract table: ${simpleError.message} (${simpleError.code})`);
-                setLoading(false);
-                return;
-            }
+                if (!c) {
+                    setErrorMsg(`Contract #${resolvedParams.id} not found.`);
+                    setLoading(false);
+                    return;
+                }
 
-            if (!simpleC) {
-                setErrorMsg(`Contract #${resolvedParams.id} does not exist in the database (Simple fetch returned null).`);
-                setLoading(false);
-                return;
-            }
+                // 2. Separate Safe Fetch for Technician Name
+                // If technician_id exists, we try to fetch it separately. 
+                // If it fails, we just show "Unknown" instead of crashing the page.
+                let techName = 'Unassigned';
+                if (c.technician_id) {
+                    const { data: techData } = await supabase
+                        .from('users')
+                        .select('name')
+                        .eq('id', c.technician_id)
+                        .single();
+                    if (techData && techData.name) {
+                        techName = techData.name;
+                    }
+                }
 
-            // If simple fetch works, try the full fetch with relations
-            const { data: c, error } = await supabase
-                .from('amc_contracts')
-                .select(`
-          *,
-          customer_locations (
-             display_name,
-             full_address,
-             customers ( id, name, contact_phone, license_number, contact_person, phone )
-          ),
-          users:technician_id ( name ) 
-        `)
-                .eq('id', resolvedParams.id)
-                .single();
+                // Construct full object for UI
+                const fullContract = {
+                    ...c,
+                    users: { name: techName } // Mock the relation structure for existing components
+                };
 
-            if (error) {
-                console.error("Full fetch error:", error);
-                // If the full fetch fails but simple worked, it's likely a relation permission issue
-                setErrorMsg(`Error fetching contract details (likely permission on related tables): ${error.message}`);
-                // We might still want to show what we have from simple fetch? No, simple fetch is just ID.
-            } else if (c) {
-                setContract(c);
+                setContract(fullContract);
+
+                // 3. Fetch Visits
                 const { data: v } = await supabase
                     .from('amc_visits')
                     .select('*')
                     .eq('amc_contract_id', c.id)
                     .order('visit_date', { ascending: false });
                 setVisits(v || []);
+
+            } catch (err: any) {
+                console.error("Unexpected error:", err);
+                setErrorMsg("An unexpected error occurred while loading context.");
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         }
         load();
     }, [resolvedParams.id]);
@@ -138,7 +150,7 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
     }
 
     if (loading) return <div className="p-8">Loading Contract Details...</div>;
-    // Show a better error or empty state if not found
+    
     if (!contract) return (
         <div className="p-8 text-center flex flex-col items-center justify-center h-full">
             <div className="bg-red-50 p-6 rounded-full mb-4">
