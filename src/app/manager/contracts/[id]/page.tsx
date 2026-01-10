@@ -56,8 +56,6 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
                 }
 
                 // 2. Separate Safe Fetch for Technician Name
-                // If technician_id exists, we try to fetch it separately. 
-                // If it fails, we just show "Unknown" instead of crashing the page.
                 let techName = 'Unassigned';
                 if (c.technician_id) {
                     const { data: techData } = await supabase
@@ -71,9 +69,14 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
                 }
 
                 // Construct full object for UI
+                // FIX: Hoist customer data up from nested relation for UI components
                 const fullContract = {
                     ...c,
-                    users: { name: techName } // Mock the relation structure for existing components
+                    users: { name: techName }, 
+                    customers: c.customer_locations?.customers, // Hoist this up!
+                    // If fetching view, fields might be flat, but here we fetch table.
+                    customer_name: c.customer_locations?.customers?.name || 'Unknown', 
+                    location_name: c.customer_locations?.display_name || 'Unknown' 
                 };
 
                 setContract(fullContract);
