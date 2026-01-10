@@ -1,27 +1,59 @@
 import Link from 'next/link';
+import { differenceInDays, parseISO } from 'date-fns';
 
 export default function ContractRow({ contract }: { contract: any }) {
+
+    // Calculate days since last AMC
+    let daysSinceLast = 'N/A';
+    if (contract.last_effective_visit_date) {
+        const last = parseISO(contract.last_effective_visit_date);
+        const days = differenceInDays(new Date(), last);
+        daysSinceLast = `${days} days`;
+    }
+
+    // Renewal Date usually means "Start Date" of current contract or when it was renewed. 
+    // User asked for "renewal date , expired date".
+    // "Renewal Date" in our system likely maps to `start_date` (the date this contract started).
+    // "Expired Date" maps to `end_date`.
+
     return (
         <Link href={`/manager/contracts/${contract.id}`} className="block">
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition flex justify-between items-center">
-                <div>
-                    <div className="font-semibold text-gray-900">
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex-1">
+                    <div className="font-semibold text-gray-900 text-sm md:text-base">
                         {contract.customer_name} <span className="text-gray-400 font-normal mx-1">/</span> {contract.location_name}
                     </div>
-                    <div className="text-gray-500 text-xs mt-1">
-                        {contract.customer_area} • Next due: <span className="font-medium text-gray-700">{contract.next_due_date || 'Not set'}</span>
+                    
+                    {/* Primary Info Row */}
+                    <div className="text-gray-500 text-xs mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+                        <span>Area: <span className="text-gray-700">{contract.customer_area || '-'}</span></span>
+                        <span>Start/Renewed: <span className="font-medium text-gray-700">{contract.start_date || '-'}</span></span>
+                        <span>Expires: <span className="font-medium text-gray-700">{contract.end_date || '-'}</span></span>
+                    </div>
+
+                    {/* Secondary Info Row (Next Due + Last Visit) */}
+                    <div className="text-gray-500 text-xs mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                         <span>Next Due: <span className={`font-medium ${contract.cycle_status === 'overdue' ? 'text-red-600' : 'text-gray-700'}`}>{contract.next_due_date || 'Not set'}</span></span>
+                         <span>Days since last AMC: <span className="font-medium text-blue-600">{daysSinceLast}</span></span>
                     </div>
                 </div>
-                <div className="text-xs">
+
+                <div className="flex items-center gap-2 self-start md:self-center">
                     <span
-                        className={`px-3 py-1 rounded-full font-medium ${contract.cycle_status === 'overdue'
-                                ? 'bg-red-100 text-red-700'
-                                : contract.cycle_status === 'due'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-green-100 text-green-700'
+                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                            contract.status === 'active' ? 'bg-green-100 text-green-800' :
+                            contract.status === 'expired' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                        }`}
+                    >
+                        {contract.status}
+                    </span>
+                    <span
+                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${contract.cycle_status === 'overdue' ? 'bg-red-50 text-red-600 border border-red-200' :
+                                contract.cycle_status === 'due' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' : 'bg-green-50 text-green-600 border border-green-200'
                             }`}
                     >
-                        {contract.cycle_status.toUpperCase()}
+                        {contract.cycle_status}
                     </span>
                 </div>
             </div>
