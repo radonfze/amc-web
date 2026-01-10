@@ -18,7 +18,7 @@ type Row = {
     lng: string;         // form 'LONGI' or 'LONGIT'
     renewal_date: string;// form 'RENEWAL DATE' or 'RENEWAL DATE:'
     amc_date: string;    // form 'AMC Date' or 'AMC Date:'
-    // Extras likely not used for import but good to keep
+    // Extras
     days_from?: string;  
     renewed?: string;
     status?: string;
@@ -38,7 +38,6 @@ export default function ImportPage() {
     const [rows, setRows] = useState<ClassifiedRow[]>([]);
     const [summary, setSummary] = useState<any | null>(null);
     const [loading, setLoading] = useState(false);
-    const [dryRun, setDryRun] = useState(true);
     const [skipInvalid, setSkipInvalid] = useState(true);
     const [rowResults, setRowResults] = useState<any[]>([]);
 
@@ -90,7 +89,6 @@ export default function ImportPage() {
 
                 const classified: ClassifiedRow[] = rawRows.map((r) => {
                     // 1. Normalize Headers (Fuzzy Match)
-                    // We look for keys in 'r' that loosely match our targets
                     const getVal = (candidates: string[]) => {
                         for (const key of Object.keys(r)) {
                             // Normalize key: remove spaces, colons, dots, uppercase
@@ -107,7 +105,7 @@ export default function ImportPage() {
                     const location = getVal(['LOCATION']);
                     const gra = getVal(['GRA No', 'GRA No.']);
                     const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.']);
-                    const contact = getVal(['CONTACT NO', 'CONTACT NO.']);
+                    const contact = getVal(['CONTACT NO', 'CONTACT NO.', 'CONTACT']);
                     const lat = getVal(['LATT', 'LAT']);
                     const lng = getVal(['LONGI', 'LONGIT', 'LONG']);
                     const renewal = getVal(['RENEWAL DATE', 'RENEWAL DATE:', 'RENEWAL']);
@@ -146,9 +144,8 @@ export default function ImportPage() {
                         customerType,
                         renewalStatus,
                         matchedCustomerId: match?.id,
-                        // Fix for API alignment:
-                        // The API route looks for keys: 'LICENSE NO.', 'GRA No.', 'CONTACT NO.', 'LATT', 'LONGIT', 'RENEWAL DATE:', 'AMC Date:'
-                        // So we MUST provide them here derived from our normalized values.
+                        
+                        // API MAPPING:
                         'LICENSE NO.': license,
                         'GRA No.': gra,
                         'CONTACT NO.': contact,
@@ -190,14 +187,14 @@ export default function ImportPage() {
         };
     }
 
-    async function handleImport() {
+    async function handleImport(isDryRun: boolean) {
         if (!rows.length) return;
         setLoading(true);
         setRowResults([]);
 
         const res = await fetch('/api/import-amc', {
             method: 'POST',
-            body: JSON.stringify({ rows, dryRun, skipInvalid }),
+            body: JSON.stringify({ rows, dryRun: isDryRun, skipInvalid }),
             headers: { 'Content-Type': 'application/json' },
         }).then((r) => r.json());
 
@@ -206,16 +203,13 @@ export default function ImportPage() {
         if (res.error) {
             alert('Import failed: ' + res.error);
         } else {
-            if (!dryRun) {
-                alert('Import process completed.');
-            } else {
-                alert('Dry run check completed. No data written.');
-            }
+            console.log("Import result", res);
         }
 
         setRowResults(res.rowResults || []);
     }
 
+    // Client-side fix functions
     function fixAll() {
         const updated = rows.map((r) => {
             const fixed: any = { ...r };
@@ -251,7 +245,7 @@ export default function ImportPage() {
         });
 
         setRows(updated);
-        alert('Applied auto-fixes to ' + updated.length + ' rows.');
+        // alert('Applied auto-fixes to ' + updated.length + ' rows.'); 
     }
 
     return (
@@ -316,16 +310,7 @@ export default function ImportPage() {
                 {rows.length > 0 && (
                     <div className="flex flex-col gap-3 pt-4 border-t">
                         <h3 className="font-semibold text-gray-800">2. Import Options</h3>
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                                type="checkbox"
-                                checked={dryRun}
-                                onChange={(e) => setDryRun(e.target.checked)}
-                                className="w-4 h-4 text-blue-600 rounded"
-                            />
-                            Dry Run (Check for errors without saving)
-                        </label>
-
+                        
                         <label className="flex items-center gap-2 text-sm text-gray-700">
                             <input
                                 type="checkbox"
@@ -336,9 +321,28 @@ export default function ImportPage() {
                             Skip Invalid Rows (Don't stop on error)
                         </label>
 
-                        <div className="flex gap-2 mt-2">
-                            <Button onClick={handleImport} disabled={loading} className="w-full md:w-auto">
-                                {loading ? 'Processing...' : dryRun ? 'Run Simulation (Dry Run)' : 'Confirm & Import All'}
+                        <div className="flex flex-wrap gap-4 mt-2">
+                             {/* Simulation Button */}
+                            <Button 
+                                onClick={() => handleImport(true)} 
+                                disabled={loading} 
+                                variant="outline"
+                                className="w-full md:w-auto"
+                            >
+                                {loading ? 'Processing...' : 'Run Simulation (Dry Run)'}
+                            </Button>
+
+                            {/* Actual Import Button */}
+                            <Button 
+                                onClick={() => {
+                                    if(confirm("Are you sure you want to import ALL valid rows? This will update the database.")) {
+                                        handleImport(false);
+                                    }
+                                }} 
+                                disabled={loading} 
+                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                            >
+                                Confirm & Import All
                             </Button>
 
                              {rowResults.some(r => !r.success) && (
@@ -378,9 +382,12 @@ export default function ImportPage() {
                                     <th className="px-4 py-2">Name</th>
                                     <th className="px-4 py-2">Location</th>
                                     <th className="px-4 py-2">License / GRA</th>
+                                    <th className="px-4 py-2">Contact</th>
+                                    <th className="px-4 py-2">Coordinates</th>
+                                    <th className="px-4 py-2">Renewal Date</th>
                                     <th className="px-4 py-2">AMC Date</th>
                                     <th className="px-4 py-2">Type</th>
-                                    <th className="px-4 py-2">Renewal</th>
+                                    <th className="px-4 py-2">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -389,11 +396,14 @@ export default function ImportPage() {
                                         <td className="px-4 py-2 font-medium">{r.NAME}</td>
                                         <td className="px-4 py-2 text-gray-500">{r.LOCATION}</td>
                                         <td className="px-4 py-2">{r.license_no} / {r.gra_no}</td>
+                                        <td className="px-4 py-2">{r.contact_no}</td>
+                                        <td className="px-4 py-2">{r.lat && r.lng ? `${r.lat}, ${r.lng}` : '-'}</td>
+                                        <td className="px-4 py-2">{r.renewal_date}</td>
                                         <td className="px-4 py-2">{r.amc_date}</td>
                                         <td className="px-4 py-2">
                                             <span className={`px-2 py-0.5 rounded-full ${r.customerType === 'existing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                                                 }`}>
-                                                {r.customerType === 'existing' ? 'Existing' : 'New'}
+                                                {r.customerType === 'existing' ? 'Exist' : 'New'}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2">
@@ -403,6 +413,36 @@ export default function ImportPage() {
                                                 {r.renewalStatus.replace('_', ' ')}
                                             </span>
                                         </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
+
+            {/* Results Table */}
+            {rowResults.length > 0 && (
+                <Card>
+                    <h2 className="font-semibold text-gray-800 mb-4">Import Results</h2>
+                    <div className="max-h-96 overflow-auto">
+                        <table className="min-w-full text-xs text-left border">
+                            <thead className="bg-gray-100 sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-2 border">Row</th>
+                                    <th className="px-4 py-2 border">Status</th>
+                                    <th className="px-4 py-2 border">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rowResults.map((r, i) => (
+                                    <tr key={i} className={r.success ? 'bg-green-50' : (r.message && r.message.startsWith('Skipped') ? 'bg-yellow-50' : 'bg-red-50')}>
+                                        <td className="px-4 py-2 border">{r.index + 2}</td>
+                                        <td className="px-4 py-2 border font-bold">
+                                            {r.success ? <span className="text-green-600">SUCCESS</span> :
+                                                (r.message && r.message.startsWith('Skipped') ? <span className="text-yellow-600">SKIPPED</span> : <span className="text-red-600">FAILED</span>)}
+                                        </td>
+                                        <td className="px-4 py-2 border text-gray-700">{r.message}</td>
                                     </tr>
                                 ))}
                             </tbody>
