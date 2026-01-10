@@ -5,6 +5,7 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CloudArrowDownIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'; // Updated icons
 
 type Row = {
     NAME: string;
@@ -16,6 +17,10 @@ type Row = {
     LONGIT: string;
     'RENEWAL DATE:': string;
     'AMC Date:': string;
+    'Days from': string;
+    'Renewed': string;
+    'Status': string;
+    'Distance': string;
 };
 
 type ClassifiedRow = Row & {
@@ -31,6 +36,35 @@ export default function ImportPage() {
     const [dryRun, setDryRun] = useState(true);
     const [skipInvalid, setSkipInvalid] = useState(true);
     const [rowResults, setRowResults] = useState<any[]>([]);
+
+    // Define the exact headers from user requirement
+    const TEMPLATE_HEADERS = [
+        "NAME",
+        "LOCATION",
+        "GRA No.",
+        "LICENSE NO.",
+        "CONTACT NO.",
+        "LATT",
+        "LONGIT",
+        "RENEWAL DATE:",
+        "AMC Date:",
+        "Days from",
+        "Renewed",
+        "Status",
+        "Distance"
+    ];
+
+    function downloadTemplate() {
+        const csvContent = TEMPLATE_HEADERS.join(",") + "\n"; // Header row only
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "amc_import_template.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 
     async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
@@ -51,6 +85,8 @@ export default function ImportPage() {
                     .select('id, gov_license_no, gra_no');
 
                 const classified: ClassifiedRow[] = rawRows.map((r) => {
+                    // Normalize keys if needed (e.g. if user upload varies slightly)
+                    // For now, we assume strict template adherence
                     const license = (r['LICENSE NO.'] || '').trim();
                     const gra = (r['GRA No.'] || '').trim();
 
@@ -159,9 +195,7 @@ export default function ImportPage() {
             const fixedPhone = fixPhone(r['CONTACT NO.']);
             if (fixedPhone) fixed['CONTACT NO.'] = fixedPhone;
 
-            // Dates (We don't have the sophisticated parser here, so we skip complex date fixing client-side 
-            // OR we import the parser. For MVP, we trust the server parser or just do basic trimming)
-            // But let's at least trim.
+            // Dates 
             if (fixed['RENEWAL DATE:']) fixed['RENEWAL DATE:'] = fixed['RENEWAL DATE:'].trim();
             if (fixed['AMC Date:']) fixed['AMC Date:'] = fixed['AMC Date:'].trim();
 
@@ -179,14 +213,6 @@ export default function ImportPage() {
             return fixed;
         });
 
-        // Re-run classification
-        // We reuse the original classification logic, but since we don't have the 'customers' list handy in this scope easily
-        // (it was in handleFile scope), we might need to store customers in state or refetch.
-        // Simplest: just update rows. The server does the real classification match anyway.
-        // But the summary depends on it. 
-        // Let's just update rows for now. If user wants to re-classify, they might need to reload or we just trust the old classification 
-        // until import runs. Or we can just keep the old classification flags but update the data content.
-
         setRows(updated);
         alert('Applied auto-fixes to ' + updated.length + ' rows.');
     }
@@ -195,23 +221,41 @@ export default function ImportPage() {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold text-gray-900">Import AMC Data</h1>
-                <a href="/manager/import/history" className="text-sm text-blue-600 hover:underline">View Import History →</a>
+                <div className="flex gap-4">
+                     <Button 
+                        variant="outline" 
+                        onClick={downloadTemplate} 
+                        className="flex items-center gap-2"
+                        title="Download empty CSV template matching required format"
+                    >
+                        <CloudArrowDownIcon className="w-5 h-5" /> Download Template
+                    </Button>
+                    <a href="/manager/import/history" className="text-sm text-blue-600 hover:underline flex items-center">
+                        View Import History →
+                    </a>
+                </div>
             </div>
 
             <Card className="space-y-4">
                 <h2 className="font-semibold text-gray-800">1. Upload CSV</h2>
-                <div className="flex gap-4 items-center">
-                    <input
-                        type="file"
-                        accept=".csv"
-                        onChange={handleFile}
-                        className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100"
-                    />
+                <div className="flex flex-col md:flex-row gap-4 items-center">
+                    <div className="relative w-full">
+                         <input
+                            type="file"
+                            accept=".csv"
+                            onChange={handleFile}
+                            className="hidden" 
+                            id="file-upload"
+                        />
+                        <label 
+                            htmlFor="file-upload" 
+                            className="cursor-pointer flex items-center justify-center gap-2 w-full p-4 border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-600 font-medium"
+                        >
+                            <ArrowUpTrayIcon className="w-6 h-6 text-gray-400" />
+                            {rows.length > 0 ? "Change File" : "Click to Upload CSV"}
+                        </label>
+                    </div>
+
                     {rows.length > 0 && (
                         <Button variant="secondary" onClick={fixAll} title="Auto-fix common errors (Names, Phones, Coords)">
                             ⚡ Fix All
@@ -219,7 +263,7 @@ export default function ImportPage() {
                     )}
                 </div>
 
-                {loading && <p className="text-sm text-blue-600">Processing...</p>}
+                {loading && <p className="text-sm text-blue-600 animate-pulse">Processing...</p>}
 
                 {summary && (
                     <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100">
@@ -233,7 +277,8 @@ export default function ImportPage() {
                 )}
 
                 {rows.length > 0 && (
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 pt-4 border-t">
+                        <h3 className="font-semibold text-gray-800">2. Import Options</h3>
                         <label className="flex items-center gap-2 text-sm text-gray-700">
                             <input
                                 type="checkbox"
@@ -254,7 +299,7 @@ export default function ImportPage() {
                             Skip Invalid Rows (Don't stop on error)
                         </label>
 
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 mt-2">
                             <Button onClick={handleImport} disabled={loading} className="w-full md:w-auto">
                                 {loading ? 'Processing...' : dryRun ? 'Run Simulation (Dry Run)' : 'Confirm & Import All'}
                             </Button>
@@ -265,8 +310,9 @@ export default function ImportPage() {
                                     onClick={() => {
                                         const failed = rowResults.filter(r => !r.success);
                                         const csvRows = [
+                                            // Escape quotes in message if needed
                                             'Row,Message',
-                                            ...failed.map(r => `${r.index + 2},"${r.message}"`)
+                                            ...failed.map(r => `${r.index + 2},"${(r.message || "").replace(/"/g, '""')}"`)
                                         ];
                                         const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
                                         const url = URL.createObjectURL(blob);
@@ -290,9 +336,9 @@ export default function ImportPage() {
             {rowResults.length > 0 && (
                 <Card>
                     <h2 className="font-semibold text-gray-800 mb-4">Import Results</h2>
-                    <div className="max-h-64 overflow-auto">
+                    <div className="max-h-96 overflow-auto">
                         <table className="min-w-full text-xs text-left border">
-                            <thead className="bg-gray-100">
+                            <thead className="bg-gray-100 sticky top-0">
                                 <tr>
                                     <th className="px-4 py-2 border">Row</th>
                                     <th className="px-4 py-2 border">Status</th>
