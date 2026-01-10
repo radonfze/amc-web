@@ -1,8 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, LayersControl } from 'react-leaflet';
-import { supabase } from '@/lib/supabaseClient';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -14,6 +12,25 @@ L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+// Custom Icons
+const greenIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    iconSize: [35, 57], // ~40% bigger than standard 25x41
+    iconAnchor: [17, 57],
+    popupAnchor: [1, -45],
+    shadowSize: [50, 50]
+});
+
+const redIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
 });
 
 export default function ContractsMap({ contracts }: { contracts: any[] }) {
@@ -47,25 +64,44 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                     </LayersControl.BaseLayer>
                 </LayersControl>
 
-                {contracts.map((c) => (
-                    c.lat && c.lng ? (
-                        <Marker key={c.id} position={[c.lat, c.lng]}>
+                {contracts.map((c) => {
+                     if (!c.lat || !c.lng) return null;
+
+                     // Determine status
+                     // Assuming 'status' column exists or checking dates
+                     // If status is not explicitly 'expired' and date is future -> Active
+                     const isExpired = c.status === 'expired' || (c.end_date && new Date(c.end_date) < new Date());
+                     
+                     return (
+                        <Marker 
+                            key={c.id} 
+                            position={[c.lat, c.lng]} 
+                            icon={isExpired ? redIcon : greenIcon}
+                        >
                             <Popup>
                                 <div className="text-sm">
                                     <b>{c.customer_name}</b>
                                     <br />
                                     {c.location_name}
                                     <br />
-                                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${c.cycle_status === 'overdue' ? 'bg-red-100 text-red-700' :
-                                        c.cycle_status === 'due' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                                    <div className="flex gap-1 mt-1">
+                                         <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                            c.cycle_status === 'overdue' ? 'bg-red-100 text-red-700' :
+                                            c.cycle_status === 'due' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
                                         }`}>
-                                        {c.cycle_status ? c.cycle_status.toUpperCase() : 'ACTIVE'}
-                                    </span>
+                                            {c.cycle_status ? c.cycle_status.toUpperCase() : 'OK'}
+                                        </span>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
+                                            isExpired ? 'border-red-200 text-red-600' : 'border-green-200 text-green-600'
+                                        }`}>
+                                            {isExpired ? 'EXPIRED' : 'ACTIVE'}
+                                        </span>
+                                    </div>
                                 </div>
                             </Popup>
                         </Marker>
-                    ) : null
-                ))}
+                    );
+                })}
             </MapContainer>
         </div>
     );
