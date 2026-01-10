@@ -39,15 +39,6 @@ const redIcon = new L.Icon({
     shadowSize: SHADOW_SIZE
 });
 
-const orangeIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: ICON_SIZE,
-    iconAnchor: ICON_ANCHOR,
-    popupAnchor: POPUP_ANCHOR,
-    shadowSize: SHADOW_SIZE
-});
-
 const yellowIcon = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -56,6 +47,31 @@ const yellowIcon = new L.Icon({
     popupAnchor: POPUP_ANCHOR,
     shadowSize: SHADOW_SIZE
 });
+
+// Red with Cross (DivIcon overlay)
+const redCrossIcon = new L.DivIcon({
+    className: '', // No external class needed, using inline styles
+    html: `
+        <div style="position: relative; width: 35px; height: 57px;">
+            <img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png" style="width: 35px; height: 57px; position: absolute; top:0; left:0;" />
+            <div style="
+                position: absolute; 
+                top: 8px; 
+                left: 50%; 
+                transform: translateX(-50%); 
+                color: white; 
+                font-weight: 900; 
+                font-size: 16px; 
+                text-shadow: 0px 0px 2px black;
+                line-height: 1;
+            ">❌</div>
+        </div>
+    `,
+    iconSize: ICON_SIZE,
+    iconAnchor: ICON_ANCHOR,
+    popupAnchor: POPUP_ANCHOR,
+});
+
 
 export default function ContractsMap({ contracts }: { contracts: any[] }) {
     // Center roughly on UAE (or calculate from contracts)
@@ -101,15 +117,19 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                      }
 
                      // Status Logic
-                     // 1. Expired (Contract ended or status is expired)
+                     // 1. Expired (Contract ended or status is expired) -> RED CROSS
                      const isExpired = c.status === 'expired' || (c.end_date && new Date(c.end_date) < new Date());
                      
-                     // 2. Overdue Visit (>90 days orange, >80 days yellow)
+                     // 2. Overdue Visit 
+                     // >90 days -> RED (previously orange)
+                     // >80 days -> YELLOW
+                     // Else -> GREEN
+                     
                      let markerIcon = greenIcon;
                      if (isExpired) {
-                        markerIcon = redIcon;
+                        markerIcon = redCrossIcon;
                      } else if (daysSinceLast > 90) {
-                        markerIcon = orangeIcon;
+                        markerIcon = redIcon; // Critical = Red
                      } else if (daysSinceLast > 80) {
                         markerIcon = yellowIcon;
                      }
