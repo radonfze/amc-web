@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup, LayersControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 // Fix for default marker icon missing
 // @ts-ignore
@@ -62,34 +62,57 @@ const redCrossIcon = new L.DivIcon({
 });
 
 
-// --- Child Component to handle Map FlyTo ---
-function MapController({ center }: { center: [number, number] | null }) {
+// --- Child Component to handle Map Zoom/Pan ---
+function MapController({ bounds, center }: { bounds?: L.LatLngBounds | null, center?: [number, number] | null }) {
     const map = useMap();
+
+    // Handle "My Location" click (Center)
     useEffect(() => {
         if (center) {
-            map.flyTo(center, 13, { duration: 1.5 });
+            map.flyTo(center, 14, { duration: 1.5 });
         }
     }, [center, map]);
+
+    // Handle "Area Select" (Bounds)
+    useEffect(() => {
+        if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+        }
+    }, [bounds, map]);
+
     return null;
 }
 
 export default function ContractsMap({ contracts }: { contracts: any[] }) {
     const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
+    const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
     
     // Filters State
     const [statusFilters, setStatusFilters] = useState({
-        green: true,  // < 80 days
-        yellow: true, // 80-90 days
-        red: true,    // > 90 days
-        expired: true // Expired
+        green: true, 
+        yellow: true, 
+        red: true,    
+        expired: true 
     });
-    const [locationFilter, setLocationFilter] = useState('');
+    const [selectedArea, setSelectedArea] = useState('All');
+
+    // Extract Unique Areas
+    const uniqueAreas = useMemo(() => {
+        const areas = new Set<string>();
+        contracts.forEach(c => {
+            if (c.customer_area) areas.add(c.customer_area);
+        });
+        return Array.from(areas).sort();
+    }, [contracts]);
 
     // Handle "My Location"
     const handleMyLocation = () => {
         if (!navigator.geolocation) return alert('GPS not supported');
         navigator.geolocation.getCurrentPosition(
-            (pos) => setMapCenter([pos.coords.latitude, pos.coords.longitude]),
+            (pos) => {
+                setMapCenter([pos.coords.latitude, pos.coords.longitude]);
+                setMapBounds(null); // Clear bounds so center takes precedence
+            },
             (err) => alert("GPS Error: " + err.message)
         );
     };
@@ -98,12 +121,9 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
     const filteredContracts = contracts.filter(c => {
         if (!c.lat || !c.lng) return false;
 
-        // 1. Location Filter
-        if (locationFilter) {
-            const loc = (c.location_name || '').toLowerCase();
-            const area = (c.customer_area || '').toLowerCase(); // Assuming area exists in view or similar
-            const search = locationFilter.toLowerCase();
-            if (!loc.includes(search) && !area.includes(search)) return false;
+        // 1. Area Filter
+        if (selectedArea !== 'All') {
+            if (c.customer_area !== selectedArea) return false;
         }
 
         // 2. Status Filter
@@ -114,8 +134,7 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
             try {
                 const last = new Date(c.last_effective_visit_date);
                 const now = new Date();
-                const diffTime = now.getTime() - last.getTime();
-                daysSinceLast = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                daysSinceLast = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
             } catch (e) {}
         }
 
@@ -129,34 +148,56 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
         return statusFilters[category];
     });
 
+    // Update Map Bounds when Area Changes
+    useEffect(() => {
+        if (selectedArea !== 'All') {
+            const areaContracts = contracts.filter(c => c.customer_area === selectedArea && c.lat && c.lng);
+            if (areaContracts.length > 0) {
+                const points = areaContracts.map(c => L.latLng(c.lat, c.lng));
+                setMapBounds(L.latLngBounds(points));
+                setMapCenter(null); // Clear center so bounds takes precedence
+            }
+        }
+    }, [selectedArea, contracts]);
+
     return (
         <div className="h-full w-full rounded-lg overflow-hidden border border-gray-200 shadow-sm z-0 relative flex flex-col">
             
             {/* Filter Controls Overlay */}
-            <div className="absolute top-2 left-14 z-[500] bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-md border border-gray-200 max-w-sm">
-                <div className="space-y-2 text-xs">
-                    <input 
-                        placeholder="Filter by Location/Area..." 
-                        className="w-full border rounded px-2 py-1"
-                        value={locationFilter}
-                        onChange={(e) => setLocationFilter(e.target.value)}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                         <label className="flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.green} onChange={e => setStatusFilters(prev => ({...prev, green: e.target.checked}))} />
-                            <span className="w-2 h-2 rounded-full bg-green-500 inline-block"/> Active
+            <div className="absolute top-2 left-14 z-[400] bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-gray-200 max-w-sm w-64">
+                <div className="space-y-3 text-sm">
+                    {/* Area Select */}
+                    <div>
+                        <label className="block text-gray-500 text-xs font-bold mb-1">Filter by Area</label>
+                        <select 
+                            className="w-full border rounded px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={selectedArea}
+                            onChange={(e) => setSelectedArea(e.target.value)}
+                        >
+                            <option value="All">All Locations</option>
+                            {uniqueAreas.map(area => (
+                                <option key={area} value={area}>{area}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Status Checkboxes */}
+                    <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-xs">
+                         <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.green} onChange={e => setStatusFilters(prev => ({...prev, green: e.target.checked}))} className="rounded text-green-500 focus:ring-green-500"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"/> Active</span>
                         </label>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.yellow} onChange={e => setStatusFilters(prev => ({...prev, yellow: e.target.checked}))} />
-                            <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block"/> 80+ Days
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.yellow} onChange={e => setStatusFilters(prev => ({...prev, yellow: e.target.checked}))} className="rounded text-yellow-500 focus:ring-yellow-500"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"/> Risk (80+)</span>
                         </label>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.red} onChange={e => setStatusFilters(prev => ({...prev, red: e.target.checked}))} />
-                            <span className="w-2 h-2 rounded-full bg-red-600 inline-block"/> 90+ Days
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.red} onChange={e => setStatusFilters(prev => ({...prev, red: e.target.checked}))} className="rounded text-red-600 focus:ring-red-600"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"/> Critical (90+)</span>
                         </label>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.expired} onChange={e => setStatusFilters(prev => ({...prev, expired: e.target.checked}))} />
-                            <span className="font-bold text-red-600">X</span> Expired
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.expired} onChange={e => setStatusFilters(prev => ({...prev, expired: e.target.checked}))} className="rounded text-red-800 focus:ring-red-800"/>
+                            <span className="flex items-center gap-1 font-bold text-red-600">X Expired</span>
                         </label>
                     </div>
                 </div>
@@ -165,15 +206,18 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
             {/* GPS Button Overlay */}
             <button 
                 onClick={handleMyLocation}
-                className="absolute top-20 left-3 z-[500] bg-white p-2 rounded shadow-md hover:bg-gray-100 border border-gray-300"
+                className="absolute top-44 left-3 z-[400] bg-white p-2 rounded shadow-md hover:bg-gray-50 border border-gray-300 text-gray-700"
                 title="Go to My Location"
             >
-                📍
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
             </button>
 
 
             <MapContainer center={[25.1985, 55.2797]} zoom={9} className="flex-1 w-full h-full" style={{ minHeight: '600px' }}>
-                <MapController center={mapCenter} />
+                <MapController bounds={mapBounds} center={mapCenter} />
                 <LayersControl position="topright">
                     <LayersControl.BaseLayer checked name="Google Hybrid (Detailed)">
                         <TileLayer url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" attribution="Google Maps" maxZoom={20} />
