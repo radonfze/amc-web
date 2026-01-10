@@ -37,6 +37,15 @@ const queries = [
   `DROP POLICY IF EXISTS "Enable update for authenticated users" ON public.customers;`,
   `CREATE POLICY "Enable update for authenticated users" ON public.customers FOR UPDATE USING (auth.role() = 'authenticated');`,
 
+  // 6b. Fix RLS for Customer Locations (Allow Managers to Create)
+  `ALTER TABLE public.customer_locations ENABLE ROW LEVEL SECURITY;`,
+  `DROP POLICY IF EXISTS "Enable insert for locations" ON public.customer_locations;`,
+  `CREATE POLICY "Enable insert for locations" ON public.customer_locations FOR INSERT WITH CHECK (auth.role() = 'authenticated');`,
+  `DROP POLICY IF EXISTS "Enable select for locations" ON public.customer_locations;`,
+  `CREATE POLICY "Enable select for locations" ON public.customer_locations FOR SELECT USING (auth.role() = 'authenticated');`,
+  `DROP POLICY IF EXISTS "Enable update for locations" ON public.customer_locations;`,
+  `CREATE POLICY "Enable update for locations" ON public.customer_locations FOR UPDATE USING (auth.role() = 'authenticated');`,
+
   // 5c. Spec v1.1 Extensions (GPS, Distance, Cycle)
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS latitude decimal CHECK (latitude BETWEEN -90 AND 90);`,
   `ALTER TABLE public.customer_locations ADD COLUMN IF NOT EXISTS longitude decimal CHECK (longitude BETWEEN -180 AND 180);`,
