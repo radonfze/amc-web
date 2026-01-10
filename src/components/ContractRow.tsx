@@ -1,20 +1,16 @@
 import Link from 'next/link';
-import { differenceInDays, parseISO } from 'date-fns';
 
 export default function ContractRow({ contract }: { contract: any }) {
 
-    // Calculate days since last AMC
+    // Calculate days since last AMC using vanilla JS to avoid date-fns dependency
     let daysSinceLast = 'N/A';
     if (contract.last_effective_visit_date) {
-        const last = parseISO(contract.last_effective_visit_date);
-        const days = differenceInDays(new Date(), last);
+        const last = new Date(contract.last_effective_visit_date);
+        const now = new Date();
+        const diffTime = now.getTime() - last.getTime();
+        const days = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         daysSinceLast = `${days} days`;
     }
-
-    // Renewal Date usually means "Start Date" of current contract or when it was renewed. 
-    // User asked for "renewal date , expired date".
-    // "Renewal Date" in our system likely maps to `start_date` (the date this contract started).
-    // "Expired Date" maps to `end_date`.
 
     return (
         <Link href={`/manager/contracts/${contract.id}`} className="block">
