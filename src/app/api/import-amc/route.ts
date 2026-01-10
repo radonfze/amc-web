@@ -168,13 +168,13 @@ export async function POST(req: Request) {
                 // --- 3. Duplicate Detection & Merge ---
 
                 // Check for Existing Customer
-                let existingCustomer = allCustomers?.find(c =>
+                let existingCustomer = allCustomers?.find((c: any) =>
                     (cleanLicense && c.gov_license_no === cleanLicense) ||
                     (cleanGra && c.gra_no === cleanGra)
                 );
 
                 if (!existingCustomer && cleanName && allCustomers) {
-                    existingCustomer = allCustomers.find(c => c.name && c.name.toLowerCase() === cleanName.toLowerCase());
+                    existingCustomer = allCustomers.find((c: any) => c.name && c.name.toLowerCase() === cleanName.toLowerCase());
                 }
 
                 let customerId = existingCustomer?.id;
@@ -218,7 +218,7 @@ export async function POST(req: Request) {
                 let existingLocation = null;
 
                 if (customerId && (!isNewCustomer || dryRun) && allLocations) {
-                    existingLocation = allLocations.find(l =>
+                    existingLocation = allLocations.find((l: any) =>
                         l.customer_id === customerId &&
                         (
                             (l.display_name && cleanName && l.display_name.toLowerCase() === cleanName.toLowerCase()) ||
@@ -272,7 +272,7 @@ export async function POST(req: Request) {
                     // 4b. Auto-assign Technician
                     let techId: string | null = null;
                     if (allTechAreas) {
-                        const match = allTechAreas.find(t => t.area && t.area.toLowerCase() === cleanLocationName?.toLowerCase());
+                        const match = allTechAreas.find((t: any) => t.area && t.area.toLowerCase() === cleanLocationName?.toLowerCase());
                         if (match) techId = match.technician_id;
                     }
 
