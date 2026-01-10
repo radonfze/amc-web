@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import ContractRow from '@/components/ContractRow';
 import Link from 'next/link';
-import { MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline'; // Add Trash Icon
+import { MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline'; 
+import { useSearchParams } from 'next/navigation';
 
-export default function ContractsList() {
+function ContractsListContent() {
     const [contracts, setContracts] = useState<any[]>([]);
     const [filteredContracts, setFilteredContracts] = useState<any[]>([]); 
     const [loading, setLoading] = useState(true);
@@ -15,25 +16,65 @@ export default function ContractsList() {
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+    const searchParams = useSearchParams();
+    const filterType = searchParams.get('filter'); // Get filter from URL
+
     useEffect(() => {
         loadContracts();
     }, []);
 
-    // Filter Logic
+    // Filter Logic: Combine Search + URL Filter
     useEffect(() => {
-        if (!searchTerm.trim()) {
-            setFilteredContracts(contracts);
-        } else {
+        let result = contracts;
+
+        // 1. Apply URL Filter (if any)
+        if (filterType) {
+            const today = new Date(); // now
+            const todayStr = today.toISOString().slice(0, 10);
+            
+            result = result.filter(c => {
+                if (filterType === 'due_today') {
+                    return c.next_due_date === todayStr;
+                }
+                if (filterType === 'overdue') {
+                    return c.status === 'overdue' || c.cycle_status === 'overdue';
+                }
+                if (filterType === 'expiring_30') {
+                    if (!c.end_date) return false;
+                    const end = new Date(c.end_date);
+                    const diffTime = end.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    return c.status === 'active' && diffDays >= 0 && diffDays <= 30;
+                }
+                if (filterType === 'critical_80_90') {
+                    // Logic: Last effective visit between 80 and 90 days ago
+                    if (!c.last_effective_visit_date) return false;
+                    const last = new Date(c.last_effective_visit_date);
+                    const diffTime = today.getTime() - last.getTime();
+                    const daysSince = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    return c.status === 'active' && daysSince > 80 && daysSince <= 90;
+                }
+                if (filterType === 'amc_queue') {
+                     // Queued: Active/Overdue/Due Soon <= Today
+                     return (['active', 'overdue', 'due_soon'].includes(c.status)) && (c.next_due_date <= todayStr || !c.next_due_date);
+                }
+                return true;
+            });
+        }
+
+        // 2. Apply Search
+        if (searchTerm.trim()) {
             const lower = searchTerm.toLowerCase();
-            const matching = contracts.filter(c => 
+            result = result.filter(c => 
                 (c.customer_name && c.customer_name.toLowerCase().includes(lower)) ||
                 (c.location_name && c.location_name.toLowerCase().includes(lower)) ||
                 (c.id && c.id.toString().includes(lower)) ||
                 (c.customer_area && c.customer_area.toLowerCase().includes(lower))
             );
-            setFilteredContracts(matching);
         }
-    }, [searchTerm, contracts]);
+
+        setFilteredContracts(result);
+    }, [searchTerm, contracts, filterType]);
 
     async function loadContracts() {
         setLoading(true);
@@ -44,7 +85,7 @@ export default function ContractsList() {
 
         if (data) {
             setContracts(data);
-            setFilteredContracts(data);
+            setFilteredContracts(data); 
         }
         setLoading(false);
     }
@@ -86,7 +127,7 @@ export default function ContractsList() {
             // Optimistic update
             const remaining = contracts.filter(c => !selectedIds.has(c.id));
             setContracts(remaining);
-            setFilteredContracts(remaining.filter(c => !selectedIds.has(c.id))); // Re-filter if needed, simple logic here implies filter matches contract subset
+            setFilteredContracts(remaining.filter(c => !selectedIds.has(c.id)));
             setSelectedIds(new Set());
             alert('Contracts deleted successfully.');
             // Reload to be safe
@@ -130,6 +171,11 @@ export default function ContractsList() {
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-gray-900">Contracts</h1>
                     <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{filteredContracts.length}</span>
+                    {filterType && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded border border-blue-200 uppercase font-bold">
+                            Filter: {filterType.replace(/_/g, ' ')}
+                        </span>
+                    )}
                 </div>
 
                 {/* Bulk Actions Bar (Conditional) */}
@@ -217,5 +263,14 @@ export default function ContractsList() {
                 </div>
             )}
         </div>
+    );
+}
+
+// Wrap in Suspense as required by useSearchParams in Next.js
+export default function ContractsList() {
+    return (
+        <Suspense fallback={<div className="p-8">Loading...</div>}>
+            <ContractsListContent />
+        </Suspense>
     );
 }

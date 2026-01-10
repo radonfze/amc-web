@@ -3,16 +3,18 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient'; 
 import { Card } from '@/components/ui/Card'; 
+import Link from 'next/link';
 
-function KPI({ title, value, color, icon }: { title: string, value: number, color: string, icon?: string }) {
+function KPI({ title, value, color, icon, href }: { title: string, value: number, color: string, icon?: string, href?: string }) {
     const colorClasses: Record<string, string> = {
         blue: 'bg-blue-50 border-blue-500 text-blue-600',
         red: 'bg-red-50 border-red-500 text-red-600',
         yellow: 'bg-yellow-50 border-yellow-500 text-yellow-600',
         orange: 'bg-orange-50 border-orange-500 text-orange-600',
     };
-    return (
-        <div className={`p-4 rounded shadow border-l-4 ${colorClasses[color] || 'bg-gray-50 border-gray-500'}`}>
+
+    const CardContent = (
+        <div className={`p-4 rounded shadow border-l-4 cursor-pointer hover:shadow-md transition ${colorClasses[color] || 'bg-gray-50 border-gray-500'}`}>
             <div className="flex justify-between items-start">
                 <div>
                     <div className="text-sm font-medium text-gray-500">{title}</div>
@@ -22,6 +24,11 @@ function KPI({ title, value, color, icon }: { title: string, value: number, colo
             </div>
         </div>
     );
+
+    if (href) {
+        return <Link href={href}>{CardContent}</Link>;
+    }
+    return CardContent;
 }
 
 // Generic Simple Table for Renewals / Lists
@@ -242,10 +249,10 @@ export default function ManagerDashboard() {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <KPI title="Due Today" value={stats.dueToday} color="blue" />
-                <KPI title="Overdue" value={stats.overdueCount} color="red" />
-                <KPI title="Expiring (30d)" value={stats.expiringSoon} color="yellow" />
-                <KPI title="Critical (80-90d)" value={stats.criticalWarning} color="orange" icon="⚠️" />
+                <KPI title="Due Today" value={stats.dueToday} color="blue" href="/manager/contracts?filter=due_today" />
+                <KPI title="Overdue" value={stats.overdueCount} color="red" href="/manager/contracts?filter=overdue" />
+                <KPI title="Expiring (30d)" value={stats.expiringSoon} color="yellow" href="/manager/contracts?filter=expiring_30" />
+                <KPI title="Critical (80-90d)" value={stats.criticalWarning} color="orange" icon="⚠️" href="/manager/contracts?filter=critical_80_90" />
                 
                 <div className="p-4 rounded shadow border-l-4 bg-green-50 border-green-500 text-green-600">
                     <div className="text-sm font-medium text-gray-500">Revenue (30d)</div>
@@ -261,7 +268,10 @@ export default function ManagerDashboard() {
                     {/* AMC Queue Board */}
                     <div className="bg-white rounded shadow text-sm border border-gray-100 overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 bg-red-50 flex justify-between items-center">
-                            <h3 className="font-bold text-red-900">🚨 AMC Queue Board (Due/Overdue)</h3>
+                             {/* Make Queue Clickable Link too */}
+                            <Link href="/manager/contracts?filter=amc_queue" className="flex-1 flex justify-between items-center group">
+                                <h3 className="font-bold text-red-900 group-hover:text-red-700 transition">🚨 AMC Queue Board (Due/Overdue)</h3>
+                            </Link>
                             <button onClick={() => load()} className="text-xs bg-white border border-red-200 text-red-700 px-3 py-1 rounded hover:bg-red-50">Refresh</button>
                         </div>
                         <table className="min-w-full text-xs">
