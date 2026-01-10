@@ -5,22 +5,27 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { CloudArrowDownIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'; // Updated icons
+import { CloudArrowDownIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
+// We map the incoming CSV to a standard internal structure
 type Row = {
     NAME: string;
     LOCATION: string;
-    'GRA No.': string;
-    'LICENSE NO.': string;
-    'CONTACT NO.': string;
-    LATT: string;
-    LONGIT: string;
-    'RENEWAL DATE:': string;
-    'AMC Date:': string;
-    'Days from': string;
-    'Renewed': string;
-    'Status': string;
-    'Distance': string;
+    gra_no: string;      // form 'GRA No.'
+    license_no: string;  // form 'LICENSE NO:' or 'LICENSE NO.'
+    contact_no: string;  // form 'CONTACT NO'
+    lat: string;         // form 'LATT'
+    lng: string;         // form 'LONGI' or 'LONGIT'
+    renewal_date: string;// form 'RENEWAL DATE' or 'RENEWAL DATE:'
+    amc_date: string;    // form 'AMC Date' or 'AMC Date:'
+    // Extras likely not used for import but good to keep
+    days_from?: string;  
+    renewed?: string;
+    status?: string;
+    distance?: string;
+    
+    // For indexing original
+    [key: string]: any; 
 };
 
 type ClassifiedRow = Row & {
@@ -37,30 +42,30 @@ export default function ImportPage() {
     const [skipInvalid, setSkipInvalid] = useState(true);
     const [rowResults, setRowResults] = useState<any[]>([]);
 
-    // Define the exact headers from user requirement
+    // User's exact requested headers
     const TEMPLATE_HEADERS = [
         "NAME",
         "LOCATION",
         "GRA No.",
-        "LICENSE NO.",
-        "CONTACT NO.",
+        "LICENSE NO:", 
+        "CONTACT NO",
         "LATT",
-        "LONGIT",
-        "RENEWAL DATE:",
-        "AMC Date:",
-        "Days from",
+        "LONGI",
+        "RENEWAL DATE",
+        "AMC Date",
+        "Days from Last Check date",
         "Renewed",
         "Status",
         "Distance"
     ];
 
     function downloadTemplate() {
-        const csvContent = TEMPLATE_HEADERS.join(",") + "\n"; // Header row only
+        const csvContent = TEMPLATE_HEADERS.join(",") + "\n"; 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "amc_import_template.csv");
+        link.setAttribute("download", "amc_import_template_v2.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -72,24 +77,43 @@ export default function ImportPage() {
 
         setLoading(true);
 
-        Papa.parse<Row>(file, {
+        Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
             complete: async (results) => {
-                const rawRows = results.data;
-                // Load master customers once to match against
-                // Select logic: we need gov_license_no and gra_no to match
-                // We fetch all to do in-memory match (assuming list < 10k rows is fine for client)
+                const rawRows = results.data as Record<string, string>[];
+                
+                // Fetch Master Data
                 const { data: customers } = await supabase
                     .from('customers')
                     .select('id, gov_license_no, gra_no');
 
                 const classified: ClassifiedRow[] = rawRows.map((r) => {
-                    // Normalize keys if needed (e.g. if user upload varies slightly)
-                    // For now, we assume strict template adherence
-                    const license = (r['LICENSE NO.'] || '').trim();
-                    const gra = (r['GRA No.'] || '').trim();
+                    // 1. Normalize Headers (Fuzzy Match)
+                    // We look for keys in 'r' that loosely match our targets
+                    const getVal = (candidates: string[]) => {
+                        for (const key of Object.keys(r)) {
+                            // Normalize key: remove spaces, colons, dots, uppercase
+                            const normKey = key.trim().toUpperCase().replace(/[:.]/g, ''); 
+                            // Check candidates
+                            if (candidates.some(c => normKey === c.toUpperCase().replace(/[:.]/g, ''))) {
+                                return r[key]?.trim() || '';
+                            }
+                        }
+                        return '';
+                    };
 
+                    const name = getVal(['NAME']);
+                    const location = getVal(['LOCATION']);
+                    const gra = getVal(['GRA No', 'GRA No.']);
+                    const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.']);
+                    const contact = getVal(['CONTACT NO', 'CONTACT NO.']);
+                    const lat = getVal(['LATT', 'LAT']);
+                    const lng = getVal(['LONGI', 'LONGIT', 'LONG']);
+                    const renewal = getVal(['RENEWAL DATE', 'RENEWAL DATE:', 'RENEWAL']);
+                    const amcDate = getVal(['AMC Date', 'AMC Date:']);
+                    
+                    // Match Logic
                     const match = customers?.find(
                         (c) =>
                             (c.gov_license_no && c.gov_license_no === license && license !== '') ||
@@ -101,7 +125,6 @@ export default function ImportPage() {
 
                     if (match) {
                         customerType = 'existing';
-                        const amcDate = (r['AMC Date:'] || '').trim();
                         // Simple check: if date exists -> renewed, otherwise -> not_renewed
                         if (amcDate && amcDate.length > 5) {
                             renewalStatus = 'renewed';
@@ -111,17 +134,41 @@ export default function ImportPage() {
                     }
 
                     return {
-                        ...r,
+                        NAME: name,
+                        LOCATION: location,
+                        gra_no: gra,
+                        license_no: license,
+                        contact_no: contact,
+                        lat,
+                        lng,
+                        renewal_date: renewal,
+                        amc_date: amcDate,
                         customerType,
                         renewalStatus,
                         matchedCustomerId: match?.id,
+                        // Fix for API alignment:
+                        // The API route looks for keys: 'LICENSE NO.', 'GRA No.', 'CONTACT NO.', 'LATT', 'LONGIT', 'RENEWAL DATE:', 'AMC Date:'
+                        // So we MUST provide them here derived from our normalized values.
+                        'LICENSE NO.': license,
+                        'GRA No.': gra,
+                        'CONTACT NO.': contact,
+                        'LATT': lat,
+                        'LONGIT': lng,
+                        'RENEWAL DATE:': renewal,
+                        'AMC Date:': amcDate,
+                        
+                        // Pass others through
+                        'Days from': '',
+                        'Renewed': '',
+                        'Status': '',
+                        'Distance': ''
                     };
                 });
 
                 setRows(classified);
                 setSummary(buildSummary(classified));
                 setLoading(false);
-                setRowResults([]); // clear previous results on new file
+                setRowResults([]); 
             },
         });
     }
@@ -169,44 +216,34 @@ export default function ImportPage() {
         setRowResults(res.rowResults || []);
     }
 
-    // Helper functions for Fix All (Client-side mirror of server logic)
-    function fixName(name: string) {
-        if (!name) return name;
-        return name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-    }
-
-    function fixPhone(raw: string) {
-        if (!raw) return null;
-        const digits = raw.replace(/\D/g, '');
-        if (digits.length === 9) return '0' + digits;
-        if (digits.length === 10) return digits;
-        return digits;
-    }
-
     function fixAll() {
         const updated = rows.map((r) => {
             const fixed: any = { ...r };
-            fixed.NAME = fixName(r.NAME);
+            
+            // Fix Name capitalization
+            if (fixed.NAME) fixed.NAME = fixed.NAME.toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
+            if (fixed.LOCATION) fixed.LOCATION = fixed.LOCATION.toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
 
-            // Fix Location Name (Simple trimming/capitalization for client side)
-            if (fixed.LOCATION) fixed.LOCATION = fixName(fixed.LOCATION);
-
-            // Phone
-            const fixedPhone = fixPhone(r['CONTACT NO.']);
-            if (fixedPhone) fixed['CONTACT NO.'] = fixedPhone;
-
-            // Dates 
-            if (fixed['RENEWAL DATE:']) fixed['RENEWAL DATE:'] = fixed['RENEWAL DATE:'].trim();
-            if (fixed['AMC Date:']) fixed['AMC Date:'] = fixed['AMC Date:'].trim();
+            // Fix Phone (remove non-digits, ensure leading 0)
+            if (fixed.contact_no) {
+                 const digits = fixed.contact_no.replace(/\D/g, '');
+                 if (digits.length === 9) fixed.contact_no = '0' + digits;
+                 else if (digits.length === 10) fixed.contact_no = digits;
+                 // Sync back to API key
+                 fixed['CONTACT NO.'] = fixed.contact_no;
+            }
 
             // Lat/Lng Swapping
-            let lat = parseFloat(r.LATT || '');
-            let lng = parseFloat(r.LONGIT || '');
+            let lat = parseFloat(r.lat || '');
+            let lng = parseFloat(r.lng || '');
             if (!isNaN(lat) && !isNaN(lng)) {
                 if ((lat < 20 || lat > 30) && (lng >= 20 && lng <= 30)) {
                     const temp = lat; lat = lng; lng = temp;
-                    fixed.LATT = lat.toString();
-                    fixed.LONGIT = lng.toString();
+                    fixed.lat = lat.toString();
+                    fixed.lng = lng.toString();
+                    // Sync back
+                    fixed.LATT = fixed.lat;
+                    fixed.LONGIT = fixed.lng;
                 }
             }
 
@@ -304,13 +341,12 @@ export default function ImportPage() {
                                 {loading ? 'Processing...' : dryRun ? 'Run Simulation (Dry Run)' : 'Confirm & Import All'}
                             </Button>
 
-                            {rowResults.some(r => !r.success) && (
+                             {rowResults.some(r => !r.success) && (
                                 <Button
                                     variant="secondary"
                                     onClick={() => {
                                         const failed = rowResults.filter(r => !r.success);
                                         const csvRows = [
-                                            // Escape quotes in message if needed
                                             'Row,Message',
                                             ...failed.map(r => `${r.index + 2},"${(r.message || "").replace(/"/g, '""')}"`)
                                         ];
@@ -332,36 +368,6 @@ export default function ImportPage() {
                 )}
             </Card>
 
-            {/* Results Table */}
-            {rowResults.length > 0 && (
-                <Card>
-                    <h2 className="font-semibold text-gray-800 mb-4">Import Results</h2>
-                    <div className="max-h-96 overflow-auto">
-                        <table className="min-w-full text-xs text-left border">
-                            <thead className="bg-gray-100 sticky top-0">
-                                <tr>
-                                    <th className="px-4 py-2 border">Row</th>
-                                    <th className="px-4 py-2 border">Status</th>
-                                    <th className="px-4 py-2 border">Message</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rowResults.map((r, i) => (
-                                    <tr key={i} className={r.success ? 'bg-green-50' : (r.message && r.message.startsWith('Skipped') ? 'bg-yellow-50' : 'bg-red-50')}>
-                                        <td className="px-4 py-2 border">{r.index + 2}</td>
-                                        <td className="px-4 py-2 border font-bold">
-                                            {r.success ? <span className="text-green-600">SUCCESS</span> :
-                                                (r.message && r.message.startsWith('Skipped') ? <span className="text-yellow-600">SKIPPED</span> : <span className="text-red-600">FAILED</span>)}
-                                        </td>
-                                        <td className="px-4 py-2 border text-gray-700">{r.message}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
-
             {rows.length > 0 && rowResults.length === 0 && (
                 <Card>
                     <h2 className="font-semibold text-gray-800 mb-4">Preview (First 20 rows)</h2>
@@ -382,8 +388,8 @@ export default function ImportPage() {
                                     <tr key={i} className="hover:bg-gray-50">
                                         <td className="px-4 py-2 font-medium">{r.NAME}</td>
                                         <td className="px-4 py-2 text-gray-500">{r.LOCATION}</td>
-                                        <td className="px-4 py-2">{r['LICENSE NO.']} / {r['GRA No.']}</td>
-                                        <td className="px-4 py-2">{r['AMC Date:']}</td>
+                                        <td className="px-4 py-2">{r.license_no} / {r.gra_no}</td>
+                                        <td className="px-4 py-2">{r.amc_date}</td>
                                         <td className="px-4 py-2">
                                             <span className={`px-2 py-0.5 rounded-full ${r.customerType === 'existing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                                                 }`}>
