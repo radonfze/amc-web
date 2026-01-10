@@ -14,41 +14,47 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Dimensions for "Big" markers (same as Green)
+const ICON_SIZE: [number, number] = [35, 57];
+const ICON_ANCHOR: [number, number] = [17, 57];
+const POPUP_ANCHOR: [number, number] = [1, -45];
+const SHADOW_SIZE: [number, number] = [50, 50];
+
 // Custom Icons
 const greenIcon = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [35, 57], // ~40% bigger than standard
-    iconAnchor: [17, 57],
-    popupAnchor: [1, -45],
-    shadowSize: [50, 50]
+    iconSize: ICON_SIZE,
+    iconAnchor: ICON_ANCHOR,
+    popupAnchor: POPUP_ANCHOR,
+    shadowSize: SHADOW_SIZE
 });
 
 const redIcon = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconSize: ICON_SIZE,
+    iconAnchor: ICON_ANCHOR,
+    popupAnchor: POPUP_ANCHOR,
+    shadowSize: SHADOW_SIZE
 });
 
 const orangeIcon = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconSize: ICON_SIZE,
+    iconAnchor: ICON_ANCHOR,
+    popupAnchor: POPUP_ANCHOR,
+    shadowSize: SHADOW_SIZE
 });
 
 const yellowIcon = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconSize: ICON_SIZE,
+    iconAnchor: ICON_ANCHOR,
+    popupAnchor: POPUP_ANCHOR,
+    shadowSize: SHADOW_SIZE
 });
 
 export default function ContractsMap({ contracts }: { contracts: any[] }) {
@@ -87,7 +93,6 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                      let daysSinceLast = 0;
                      if (c.last_effective_visit_date) {
                         try {
-                             // Use native date math to avoid date-fns dependency issues if persistent
                              const last = new Date(c.last_effective_visit_date);
                              const now = new Date();
                              const diffTime = now.getTime() - last.getTime();
