@@ -23,9 +23,34 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
     const [loading, setLoading] = useState(true);
     const [renewing, setRenewing] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     useEffect(() => {
         async function load() {
+             // 1. debug access 
+             console.log("Loading contract:", resolvedParams.id);
+
+            // First, try a simple fetch to see if we can access the contract at all
+            const { data: simpleC, error: simpleError } = await supabase
+                .from('amc_contracts')
+                .select('id')
+                .eq('id', resolvedParams.id)
+                .single();
+
+            if (simpleError) {
+                console.error("Simple fetch error:", simpleError);
+                setErrorMsg(`Error accessing contract table: ${simpleError.message} (${simpleError.code})`);
+                setLoading(false);
+                return;
+            }
+
+            if (!simpleC) {
+                setErrorMsg(`Contract #${resolvedParams.id} does not exist in the database (Simple fetch returned null).`);
+                setLoading(false);
+                return;
+            }
+
+            // If simple fetch works, try the full fetch with relations
             const { data: c, error } = await supabase
                 .from('amc_contracts')
                 .select(`
@@ -41,10 +66,11 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
                 .single();
 
             if (error) {
-                console.error("Error fetching contract:", error);
-            }
-
-            if (c) {
+                console.error("Full fetch error:", error);
+                // If the full fetch fails but simple worked, it's likely a relation permission issue
+                setErrorMsg(`Error fetching contract details (likely permission on related tables): ${error.message}`);
+                // We might still want to show what we have from simple fetch? No, simple fetch is just ID.
+            } else if (c) {
                 setContract(c);
                 const { data: v } = await supabase
                     .from('amc_visits')
@@ -115,11 +141,13 @@ export default function ContractPage({ params }: { params: Promise<{ id: string 
     // Show a better error or empty state if not found
     if (!contract) return (
         <div className="p-8 text-center flex flex-col items-center justify-center h-full">
-            <div className="bg-gray-100 p-6 rounded-full mb-4">
-                <XCircleIcon className="w-12 h-12 text-gray-400" />
+            <div className="bg-red-50 p-6 rounded-full mb-4">
+                <XCircleIcon className="w-12 h-12 text-red-400" />
             </div>
-            <h2 className="text-xl font-bold text-gray-700">Contract Not Found</h2>
-            <p className="text-gray-500 mt-2 mb-6 max-w-sm">The contract #{resolvedParams.id} could not be found. It may have been deleted or you may not have permission to view it.</p>
+            <h2 className="text-xl font-bold text-gray-700">Contract Load Error</h2>
+            <p className="text-red-700 mt-2 mb-6 max-w-lg font-mono text-sm bg-red-100 p-4 rounded border border-red-200">
+                {errorMsg || "Unknown error: Contract found but data is null."}
+            </p>
             <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => router.push('/manager/contracts')}>Back to Contracts List</Button>
         </div>
     );
