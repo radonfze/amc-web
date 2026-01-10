@@ -185,3 +185,101 @@ export async function createManualContract(formData: FormData) {
         throw new Error(e.message || "An unexpected error occurred");
     }
 }
+
+export async function updateManualContract(contractId: number, formData: FormData) {
+    const supabase = await createClient();
+
+    // 0. Auth Check
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized: Please login first");
+
+    // Fields
+    const customerName = formData.get('customerName') as string;
+    const phone = formData.get('phone') as string;
+    const locationName = formData.get('locationName') as string;
+    const graNumber = (formData.get('graNumber') as string)?.trim() || null;
+    const licenseNumber = (formData.get('licenseNumber') as string)?.trim() || null;
+    
+    // GPS
+    const latitude = parseFloat(formData.get('latitude') as string) || 0;
+    const longitude = parseFloat(formData.get('longitude') as string) || 0;
+    const distanceKm = parseFloat(formData.get('distance') as string) || 0;
+
+    // Lifecycle
+    const amcDate = formData.get('amcDate') as string;
+    const renewalDate = formData.get('renewalDate') as string;
+    let lastRenewed: string | null = formData.get('renewedDate') as string;
+    if (!lastRenewed || lastRenewed.trim() === '') lastRenewed = null; 
+    const status = formData.get('status') as string;
+
+    // Financials
+    const govtFees = parseFloat(formData.get('govtFees') as string) || 0;
+    const amcValue = parseFloat(formData.get('amcValue') as string) || 0;
+    const fineAmount = parseFloat(formData.get('fineAmount') as string) || 0;
+    const paidAmount = parseFloat(formData.get('paidAmount') as string) || 0;
+    const amountTotal = parseFloat(formData.get('amount') as string) || (govtFees + amcValue + fineAmount);
+    const balanceAmount = amountTotal - paidAmount;
+
+    // Payment Status
+    let paymentStatus = 'pending';
+    if (paidAmount >= amountTotal && amountTotal > 0) paymentStatus = 'paid_online';
+    else if (paidAmount > 0) paymentStatus = 'partial';
+
+    // 1. Get Existing Contract to find links
+    const { data: contract, error: fetchErr } = await supabase
+        .from('amc_contracts')
+        .select('customer_location_id, customer_locations(id, customer_id)')
+        .eq('id', contractId)
+        .single();
+    
+    if (fetchErr || !contract) throw new Error("Contract not found");
+
+    const locationId = contract.customer_location_id;
+    // @ts-ignore
+    const customerId = contract.customer_locations?.customer_id;
+
+    // 2. Update Customer (if exists)
+    if (customerId) {
+        await supabase.from('customers').update({
+            name: customerName,
+            phone,
+            gra_number: graNumber,
+            license_number: licenseNumber
+        }).eq('id', customerId);
+    }
+
+    // 3. Update Location
+    if (locationId) {
+        await supabase.from('customer_locations').update({
+            display_name: locationName,
+            latitude,
+            longitude,
+            distance_km: distanceKm
+        }).eq('id', locationId);
+    }
+
+    // 4. Update Contract
+    const { error: updateErr } = await supabase
+        .from('amc_contracts')
+        .update({
+            start_date: amcDate,
+            end_date: renewalDate,
+            status: status,
+            amount_total: amountTotal,
+            govt_fees: govtFees,
+            amc_value: amcValue,
+            fine_amount: fineAmount,
+            paid_amount: paidAmount,
+            balance_amount: balanceAmount,
+            payment_status: paymentStatus,
+            last_renewed_date: lastRenewed,
+            // optionally update next_due_date logic here
+        })
+        .eq('id', contractId);
+
+    if (updateErr) throw new Error("Failed to update contract: " + updateErr.message);
+
+    revalidatePath('/manager/contracts');
+    revalidatePath(`/manager/contracts/${contractId}`);
+    return { success: true };
+}
