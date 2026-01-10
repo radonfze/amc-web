@@ -163,59 +163,6 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
     return (
         <div className="h-full w-full rounded-lg overflow-hidden border border-gray-200 shadow-sm z-0 relative flex flex-col">
             
-            {/* Filter Controls Overlay */}
-            <div className="absolute top-2 left-14 z-[400] bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-gray-200 max-w-sm w-64">
-                <div className="space-y-3 text-sm">
-                    {/* Area Select */}
-                    <div>
-                        <label className="block text-gray-500 text-xs font-bold mb-1">Filter by Area</label>
-                        <select 
-                            className="w-full border rounded px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={selectedArea}
-                            onChange={(e) => setSelectedArea(e.target.value)}
-                        >
-                            <option value="All">All Locations</option>
-                            {uniqueAreas.map(area => (
-                                <option key={area} value={area}>{area}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Status Checkboxes */}
-                    <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-xs">
-                         <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.green} onChange={e => setStatusFilters(prev => ({...prev, green: e.target.checked}))} className="rounded text-green-500 focus:ring-green-500"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"/> Active</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.yellow} onChange={e => setStatusFilters(prev => ({...prev, yellow: e.target.checked}))} className="rounded text-yellow-500 focus:ring-yellow-500"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"/> Risk (80+)</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.red} onChange={e => setStatusFilters(prev => ({...prev, red: e.target.checked}))} className="rounded text-red-600 focus:ring-red-600"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"/> Critical (90+)</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={statusFilters.expired} onChange={e => setStatusFilters(prev => ({...prev, expired: e.target.checked}))} className="rounded text-red-800 focus:ring-red-800"/>
-                            <span className="flex items-center gap-1 font-bold text-red-600">X Expired</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            {/* GPS Button Overlay */}
-            <button 
-                onClick={handleMyLocation}
-                className="absolute top-44 left-3 z-[400] bg-white p-2 rounded shadow-md hover:bg-gray-50 border border-gray-300 text-gray-700"
-                title="Go to My Location"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-            </button>
-
-
             <MapContainer center={[25.1985, 55.2797]} zoom={9} className="flex-1 w-full h-full" style={{ minHeight: '600px' }}>
                 <MapController bounds={mapBounds} center={mapCenter} />
                 <LayersControl position="topright">
@@ -263,6 +210,58 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                     );
                 })}
             </MapContainer>
+
+            {/* Filter Controls Overlay */}
+            <div className="absolute top-2 left-14 z-[2000] bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-gray-200 max-w-sm w-64">
+                <div className="space-y-3 text-sm">
+                    {/* Area Select */}
+                    <div>
+                        <label className="block text-gray-500 text-xs font-bold mb-1">Filter by Area</label>
+                        <select 
+                            className="w-full border rounded px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={selectedArea}
+                            onChange={(e) => setSelectedArea(e.target.value)}
+                        >
+                            <option value="All">All Locations</option>
+                            {uniqueAreas.map(area => (
+                                <option key={area} value={area}>{area}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Status Checkboxes */}
+                    <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-xs">
+                         <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.green} onChange={e => setStatusFilters(prev => ({...prev, green: e.target.checked}))} className="rounded text-green-500 focus:ring-green-500"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"/> Active</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.yellow} onChange={e => setStatusFilters(prev => ({...prev, yellow: e.target.checked}))} className="rounded text-yellow-500 focus:ring-yellow-500"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"/> Risk (80+)</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.red} onChange={e => setStatusFilters(prev => ({...prev, red: e.target.checked}))} className="rounded text-red-600 focus:ring-red-600"/>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"/> Critical (90+)</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={statusFilters.expired} onChange={e => setStatusFilters(prev => ({...prev, expired: e.target.checked}))} className="rounded text-red-800 focus:ring-red-800"/>
+                            <span className="flex items-center gap-1 font-bold text-red-600">X Expired</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            {/* GPS Button Overlay */}
+            <button 
+                onClick={handleMyLocation}
+                className="absolute top-44 left-3 z-[2000] bg-white p-2 rounded shadow-md hover:bg-gray-50 border border-gray-300 text-gray-700"
+                title="Go to My Location"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
         </div>
     );
 }
