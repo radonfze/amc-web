@@ -24,6 +24,38 @@ function KPI({ title, value, color, icon }: { title: string, value: number, colo
     );
 }
 
+// Generic Simple Table for Renewals / Lists
+function SimpleTable({ title, rows, columns }: { title: string, rows: any[], columns: { header: string, key: string, className?: string }[] }) {
+    return (
+        <div className="bg-white rounded shadow p-4 text-sm border border-gray-100">
+            <div className="font-semibold mb-3 text-gray-900">{title}</div>
+            <table className="min-w-full text-xs">
+                <thead className="bg-gray-50">
+                    <tr>
+                        {columns.map((col, i) => (
+                            <th key={i} className={`border-b px-3 py-2 text-left font-medium text-gray-500 uppercase ${col.className || ''}`}>{col.header}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((r, i) => (
+                        <tr key={r.id || i} className="hover:bg-gray-50">
+                            {columns.map((col, j) => (
+                                <td key={j} className="border-b px-3 py-2 text-gray-700">{r[col.key]}</td>
+                            ))}
+                        </tr>
+                    ))}
+                    {rows.length === 0 && (
+                        <tr>
+                            <td colSpan={columns.length} className="px-3 py-4 text-center text-gray-400 italic">No data available</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function TechTable({ title, rows, metric }: { title: string, rows: any[], metric: string }) {
     return (
         <div className="bg-white rounded shadow p-4 text-sm border border-gray-100">
@@ -85,6 +117,7 @@ export default function ManagerDashboard() {
         const today = new Date();
         const todayStr = today.toISOString().slice(0, 10);
         const thirtyDaysLater = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+        const ninetyDaysLater = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
 
         // Date math for 80-90 days warning
         const date80DaysAgo = new Date(); date80DaysAgo.setDate(today.getDate() - 80);
@@ -113,8 +146,6 @@ export default function ManagerDashboard() {
                 .lte('end_date', thirtyDaysLater);
 
             // 4. Critical Warning (80-90 days since last visit)
-            // Note: Filter where last_effective_visit_date is between 90 and 80 days ago
-            // i.e. last_visit < 80 days ago AND last_visit > 90 days ago
             const { data: criticalData } = await supabase
                 .from('amc_contracts')
                 .select('id, last_effective_visit_date')
@@ -122,17 +153,16 @@ export default function ManagerDashboard() {
                 .lt('last_effective_visit_date', date80DaysAgo.toISOString().slice(0, 10))
                 .gt('last_effective_visit_date', date90DaysAgo.toISOString().slice(0, 10));
 
-            // 5. AMC Queue Board (Visits Due, Unassigned/Pending)
-            // Just contracts due or overdue
+            // 5. AMC Queue Board 
             const { data: amcQueue } = await supabase
                 .from('amc_contracts')
                 .select('id, customer_name, location_name, customer_area, next_due_date')
-                .in('status', ['active', 'overdue'])
+                .in('status', ['active', 'overdue', 'due_soon']) // Added due_soon just in case
                 .lte('next_due_date', todayStr)
                 .order('next_due_date', { ascending: true })
                 .limit(10);
 
-            // 6. Renewal Pending List
+            // 6. Renewal Pending List (Using explicit Select)
             const { data: renewalsList } = await supabase
                 .from('amc_contracts')
                 .select('id, customer_name, end_date')
@@ -142,14 +172,39 @@ export default function ManagerDashboard() {
                 .order('end_date', { ascending: true })
                 .limit(5);
 
+            // 7. Pipeline Calculation (Client-Side for reliability)
+            // Fetch all active contracts ending in next 90 days
+            const { data: rawPipeline } = await supabase
+                .from('amc_contracts')
+                .select('end_date')
+                .eq('status', 'active')
+                .gte('end_date', todayStr)
+                .lte('end_date', ninetyDaysLater);
+            
+            // Bucket them in JS
+            const pipelineBuckets = [
+                { bucket: '0-30', count: 0 },
+                { bucket: '31-60', count: 0 },
+                { bucket: '61-90', count: 0 },
+            ];
+            
+            if (rawPipeline) {
+                const now = new Date();
+                rawPipeline.forEach(c => {
+                    const end = new Date(c.end_date);
+                    const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                    if (diffDays <= 30) pipelineBuckets[0].count++;
+                    else if (diffDays <= 60) pipelineBuckets[1].count++;
+                    else if (diffDays <= 90) pipelineBuckets[2].count++;
+                });
+            }
 
-            // 7. Standard Charts/Tables
+            // 8. Standard Charts/Tables
             const { data: topVisits } = await supabase.rpc('top_tech_visits_30days');
             const { data: topCollections } = await supabase.rpc('top_tech_collections_30days');
             const { data: schedule } = await supabase.from('today_tech_schedule').select('*').limit(10);
             const { data: revenue } = await supabase.rpc('revenue_forecast_30days');
-            const { data: pipeline } = await supabase.from('renewal_pipeline').select('*');
-
+            
             setStats({
                 dueToday: dueToday?.length || 0,
                 overdueCount: overdueCount || 0,
@@ -159,7 +214,7 @@ export default function ManagerDashboard() {
                 topCollections: topCollections || [],
                 schedule: schedule || [],
                 revenue: revenue || [],
-                pipeline: pipeline || [],
+                pipeline: pipelineBuckets, // Use our JS calculated buckets
                 amcQueue: amcQueue || [],
                 renewalsList: renewalsList || []
             });
@@ -279,21 +334,25 @@ export default function ManagerDashboard() {
                 <div className="space-y-6">
                     
                     {/* Renewal Pending List */}
-                    <TechTable title="Renewals Pending (30d)" rows={stats.renewalsList.map((r:any) => ({...r, end_date: r.end_date}))} metric="end_date" />
+                    <SimpleTable 
+                        title="Renewals Pending (30d)" 
+                        rows={stats.renewalsList} 
+                        columns={[
+                            { header: 'Customer', key: 'customer_name' },
+                            { header: 'End Date', key: 'end_date' }
+                        ]}
+                    />
 
                     {/* Visual Pie/Funnel */}
                     <Card>
                         <h3 className="font-semibold text-gray-900 mb-4">Pipeline (90d)</h3>
                         <div className="space-y-3">
-                            {['0-30', '31-60', '61-90'].map(bucket => {
-                                const count = stats.pipeline.find((p: any) => p.bucket === bucket)?.count || 0;
-                                return (
-                                    <div key={bucket} className="flex justify-between items-center bg-blue-50 p-2 rounded text-xs">
-                                        <span className="font-bold text-blue-700">{bucket} Days</span>
-                                        <span className="bg-white px-2 py-0.5 rounded text-blue-600 font-bold border border-blue-100">{count}</span>
-                                    </div>
-                                )
-                            })}
+                            {stats.pipeline.map((p: any) => (
+                                <div key={p.bucket} className="flex justify-between items-center bg-blue-50 p-2 rounded text-xs">
+                                    <span className="font-bold text-blue-700">{p.bucket} Days</span>
+                                    <span className="bg-white px-2 py-0.5 rounded text-blue-600 font-bold border border-blue-100">{p.count}</span>
+                                </div>
+                            ))}
                         </div>
                     </Card>
 
