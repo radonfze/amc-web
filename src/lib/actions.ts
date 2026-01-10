@@ -16,13 +16,17 @@ export async function searchCustomers(query: string) {
 export async function createManualContract(formData: FormData) {
     const supabase = await createClient();
 
+    // 0. Auth Check
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Unauthorized: Please login first");
+
     // Fields from Form v1.1
     // Customer Name is now mandatory and handled strictly
     const customerName = formData.get('customerName') as string;
     const phone = formData.get('phone') as string;
     const locationName = formData.get('locationName') as string;
-    const graNumber = formData.get('graNumber') as string;
-    const licenseNumber = formData.get('licenseNumber') as string;
+    const graNumber = (formData.get('graNumber') as string)?.trim() || null;
+    const licenseNumber = (formData.get('licenseNumber') as string)?.trim() || null;
     const area = 'Dubai';
 
     // GPS & Distance
@@ -35,13 +39,23 @@ export async function createManualContract(formData: FormData) {
     const renewalDate = formData.get('renewalDate') as string;
     const visitDay = parseInt(formData.get('day') as string) || 1;
     let lastRenewed: string | null = formData.get('renewedDate') as string;
-    if (!lastRenewed || lastRenewed.trim() === '') lastRenewed = null; // Fix: Empty string crashes Postgres Date column
+    if (!lastRenewed || lastRenewed.trim() === '') lastRenewed = null; 
     const status = formData.get('status') as string;
     const amount = parseFloat(formData.get('amount') as string) || 0;
     const govtFees = parseFloat(formData.get('govtFees') as string) || 0;
     const amcValue = parseFloat(formData.get('amcValue') as string) || 0;
 
     if (!customerName) throw new Error("Customer Name is required");
+
+    // Calculate Next Due Date Safely
+    let nextDueDate = null;
+    if (amcDate) {
+        const d = new Date(amcDate);
+        if (!isNaN(d.getTime())) {
+            d.setDate(d.getDate() + 90);
+            nextDueDate = d.toISOString().slice(0, 10);
+        }
+    }
 
     // 1. Find or Create Customer
     let customerId;
@@ -124,7 +138,8 @@ export async function createManualContract(formData: FormData) {
                 visit_day: visitDay,
                 last_renewed_date: lastRenewed,
                 last_effective_visit_date: amcDate,
-                next_due_date: new Date(new Date(amcDate).setDate(new Date(amcDate).getDate() + 90)).toISOString().slice(0, 10)
+                next_due_date: nextDueDate,
+                technician_id: user.id // Assign to creator (Manager)
             });
 
         if (contractError) {
@@ -135,7 +150,8 @@ export async function createManualContract(formData: FormData) {
         revalidatePath('/manager/contracts');
         return { success: true };
     } catch (e: any) {
-        console.error("Server Action Error:", e);
+        console.error("Server Action Error (Create Contract):", e);
         throw new Error(e.message || "An unexpected error occurred");
     }
 }
+
