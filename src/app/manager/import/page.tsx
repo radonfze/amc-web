@@ -31,6 +31,7 @@ type ClassifiedRow = Row & {
     customerType: 'existing' | 'new';
     renewalStatus: 'renewed' | 'not_renewed' | 'new_customer';
     matchedCustomerId?: number;
+    coordStatus?: 'ok' | 'swapped' | 'invalid';
 };
 
 export default function ImportPage() {
@@ -100,15 +101,15 @@ export default function ImportPage() {
                         return '';
                     };
 
-                    const name = getVal(['NAME']);
-                    const location = getVal(['LOCATION']);
-                    const gra = getVal(['GRA No', 'GRA No.']);
-                    const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.']);
-                    const contact = getVal(['CONTACT NO', 'CONTACT NO.', 'CONTACT']);
-                    const lat = getVal(['LATT', 'LAT']);
-                    const lng = getVal(['LONGI', 'LONGIT', 'LONG']);
+                    const name = getVal(['NAME', 'CUSTOMER NAME']);
+                    const location = getVal(['LOCATION', 'AREA']);
+                    const gra = getVal(['GRA No', 'GRA No.', 'GRA', 'GRA NO']);
+                    const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.', 'LIC NO', 'LICENSE']);
+                    const contact = getVal(['CONTACT NO', 'CONTACT NO.', 'CONTACT', 'PHONE']);
+                    const lat = getVal(['LATT', 'LAT', 'LATITUDE']);
+                    const lng = getVal(['LONGI', 'LONGIT', 'LONG', 'LONGITUDE']);
                     const renewal = getVal(['RENEWAL DATE', 'RENEWAL DATE:', 'RENEWAL']);
-                    const amcDate = getVal(['AMC Date', 'AMC Date:']);
+                    const amcDate = getVal(['AMC Date', 'AMC Date:', 'AMC START']);
                     
                     // Match Logic
                     const match = customers?.find(
@@ -235,7 +236,7 @@ export default function ImportPage() {
 
     // Client-side fix functions
     function fixAll() {
-        alert("Fixing data in browser...");
+        alert("Running Auto-Fix: Normalizing Names, Phones, and Enforcing UAE Coordinates.");
         const updated = rows.map((r) => {
             const fixed: any = { ...r };
             
@@ -252,17 +253,38 @@ export default function ImportPage() {
                  fixed['CONTACT NO.'] = fixed.contact_no;
             }
 
-            // Lat/Lng Swapping (Basic Heuristic)
-            let lat = parseFloat(r.lat || '');
-            let lng = parseFloat(r.lng || '');
-            if (!isNaN(lat) && !isNaN(lng)) {
-                if ((lat < 20 || lat > 30) && (lng >= 20 && lng <= 30)) {
-                    const temp = lat; lat = lng; lng = temp;
-                    fixed.lat = lat.toString();
-                    fixed.lng = lng.toString();
-                    fixed.LATT = fixed.lat;
-                    fixed.LONGIT = fixed.lng;
+            // Lat/Lng Fixes - Strict UAE Validation
+            // UAE is approx Lat: 22-28, Long: 51-57
+            let lat = parseFloat(r.lat || r.LATT || '0');
+            let lng = parseFloat(r.lng || r.LONGI || '0');
+            
+            let status = 'ok';
+
+            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                // Check if Swapped
+                // If Lat is > 50 (Russia/Europe/Swapped Long) AND Lng is < 50 (Swapped Lat)
+                if (lat > 50 && lng < 40) {
+                     // SWAP
+                     const temp = lat; lat = lng; lng = temp;
+                     status = 'swapped';
                 }
+
+                // Final Check for UAE
+                // Assuming RAK/Dubai focus
+                if (lat < 22 || lat > 28 || lng < 50 || lng > 60) {
+                    // Coordinates outside UAE even after check?
+                    // Maybe just update them anyway, but flag.
+                    status = 'invalid';
+                    // We keep them but user knows via 'invalid' flag if we displayed it. 
+                    // But here we rely on the map.
+                    // If it is Egypt (26, 30), it will trigger this Invalid check (Lng 30 < 50).
+                }
+
+                fixed.lat = lat.toString();
+                fixed.lng = lng.toString();
+                fixed.LATT = fixed.lat;
+                fixed.LONGIT = fixed.lng;
+                fixed.coordStatus = status;
             }
 
             return fixed;
@@ -343,7 +365,7 @@ export default function ImportPage() {
 
                     {rows.length > 0 && (
                         <Button variant="secondary" onClick={fixAll} title="Auto-fix common errors (Names, Phones, Coords)">
-                            ⚡ Fix All
+                            ⚡ Fix All (UAE Coords)
                         </Button>
                     )}
                 </div>
@@ -435,10 +457,9 @@ export default function ImportPage() {
                                     <th className="px-4 py-2">Name</th>
                                     <th className="px-4 py-2">Location</th>
                                     <th className="px-4 py-2">License / GRA</th>
-                                    <th className="px-4 py-2">Contact</th>
                                     <th className="px-4 py-2">Coordinates</th>
+                                    <th className="px-4 py-2">CoordStatus</th>
                                     <th className="px-4 py-2">Renewal Date</th>
-                                    <th className="px-4 py-2">AMC Date</th>
                                     <th className="px-4 py-2">Type</th>
                                     <th className="px-4 py-2">Status</th>
                                 </tr>
@@ -449,10 +470,16 @@ export default function ImportPage() {
                                         <td className="px-4 py-2 font-medium">{r.NAME}</td>
                                         <td className="px-4 py-2 text-gray-500">{r.LOCATION}</td>
                                         <td className="px-4 py-2">{r.license_no} / {r.gra_no}</td>
-                                        <td className="px-4 py-2">{r.contact_no}</td>
-                                        <td className="px-4 py-2">{r.lat && r.lng ? `${r.lat}, ${r.lng}` : '-'}</td>
+                                        <td className="px-4 py-2 bg-gray-50 font-mono text-[10px]">
+                                            {r.lat}, {r.lng}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            {r.coordStatus === 'swapped' && <span className="text-orange-600 font-bold">Swapped</span>}
+                                            {r.coordStatus === 'invalid' && <span className="text-red-600 font-bold">Invalid (Not UAE)</span>}
+                                            {r.coordStatus === 'ok' && <span className="text-green-600">OK</span>}
+                                            {!r.coordStatus && <span className="text-gray-400">-</span>}
+                                        </td>
                                         <td className="px-4 py-2">{r.renewal_date}</td>
-                                        <td className="px-4 py-2">{r.amc_date}</td>
                                         <td className="px-4 py-2">
                                             <span className={`px-2 py-0.5 rounded-full ${r.customerType === 'existing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                                                 }`}>
