@@ -40,6 +40,10 @@ export default function ImportPage() {
     const [loading, setLoading] = useState(false);
     const [skipInvalid, setSkipInvalid] = useState(true);
     const [rowResults, setRowResults] = useState<any[]>([]);
+    
+    // Progress State
+    const [progress, setProgress] = useState(0);
+    const [importStatus, setImportStatus] = useState('');
 
     // User's exact requested headers
     const TEMPLATE_HEADERS = [
@@ -200,37 +204,60 @@ export default function ImportPage() {
         if(!confirm(msg)) return;
 
         setLoading(true);
+        setProgress(0);
         setRowResults([]);
+        setImportStatus('Starting...');
 
         console.log("Starting Import. DryRun:", isDryRun);
 
+        const BATCH_SIZE = 50; 
+        const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
+        let allResults: any[] = [];
+        
         try {
-            const res = await fetch('/api/import-amc', {
-                method: 'POST',
-                body: JSON.stringify({ rows, dryRun: isDryRun, skipInvalid }),
-                headers: { 'Content-Type': 'application/json' },
-            }).then((r) => r.json());
-    
-            setLoading(false);
-    
-            if (res.error) {
-                alert('Import failed: ' + res.error);
-                console.error("Import Error:", res.error);
-            } else {
-                console.log("Import result", res);
-                if (!isDryRun) {
-                    alert(`Import Complete! Imported ${res.rowResults.filter((r:any) => r.success).length} rows.`);
-                    window.location.href = '/manager/contracts'; // Redirect on success
-                } else {
-                    alert('Simulation Complete.');
-                }
+            for (let i = 0; i < totalBatches; i++) {
+                const start = i * BATCH_SIZE;
+                const end = Math.min(start + BATCH_SIZE, rows.length);
+                const batch = rows.slice(start, end);
+
+                setImportStatus(`Importing batch ${i + 1} of ${totalBatches} (Rows ${start + 1}-${end})...`);
+                
+                const res = await fetch('/api/import-amc', {
+                    method: 'POST',
+                    body: JSON.stringify({ rows: batch, dryRun: isDryRun, skipInvalid }),
+                    headers: { 'Content-Type': 'application/json' },
+                }).then((r) => r.json());
+
+                if (res.error) throw new Error(res.error);
+
+                 // Accommodate index offset for results
+                const batchResults = (res.rowResults || []).map((r: any) => ({
+                    ...r,
+                    index: r.index + start // Adjust index to match global position
+                }));
+
+                allResults = [...allResults, ...batchResults];
+
+                // Update Progress
+                setProgress(Math.round(((i + 1) / totalBatches) * 100));
             }
     
-            setRowResults(res.rowResults || []);
+            setLoading(false);
+            setImportStatus(isDryRun ? 'Simulation Complete' : 'Import Complete');
+            
+            if (!isDryRun) {
+                alert(`Import Complete! Imported ${allResults.filter((r:any) => r.success).length} rows.`);
+                window.location.href = '/manager/contracts'; 
+            } else {
+                alert('Simulation Complete.');
+            }
+    
+            setRowResults(allResults);
+
         } catch (error: any) {
             setLoading(false);
             console.error(error);
-            alert("Network/Server Error: " + error.message);
+            alert("Import Failed at batch " + importStatus + ": " + error.message);
         }
     }
 
@@ -272,12 +299,7 @@ export default function ImportPage() {
                 // Final Check for UAE
                 // Assuming RAK/Dubai focus
                 if (lat < 22 || lat > 28 || lng < 50 || lng > 60) {
-                    // Coordinates outside UAE even after check?
-                    // Maybe just update them anyway, but flag.
                     status = 'invalid';
-                    // We keep them but user knows via 'invalid' flag if we displayed it. 
-                    // But here we rely on the map.
-                    // If it is Egypt (26, 30), it will trigger this Invalid check (Lng 30 < 50).
                 }
 
                 fixed.lat = lat.toString();
@@ -370,9 +392,25 @@ export default function ImportPage() {
                     )}
                 </div>
 
-                {loading && <p className="text-sm text-blue-600 animate-pulse font-medium">Processing... Please wait...</p>}
+                {/* --- PROGRESS BAR --- */}
+                {loading && (
+                    <div className="w-full bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4 shadow-sm animate-pulse">
+                        <div className="flex justify-between text-sm font-bold text-blue-800 mb-2">
+                            <span>{importStatus || 'Processing...'}</span>
+                            <span>{progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div 
+                                className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                                style={{ width: `${progress}%` }}
+                            ></div>
+                        </div>
+                        <p className="text-xs text-blue-600 mt-2 text-center">Do not close this window.</p>
+                    </div>
+                )}
 
-                {summary && (
+
+                {summary && !loading && (
                     <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100">
                         <div className="font-medium text-gray-900">Summary:</div>
                         <div>Total rows: <span className="font-bold">{summary.total}</span></div>
@@ -405,7 +443,7 @@ export default function ImportPage() {
                                 disabled={loading} 
                                 className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded border border-gray-300 font-medium"
                             >
-                                {loading ? '...' : 'Run Simulation (Dry Run)'}
+                                {loading ? 'Wait...' : 'Run Simulation (Dry Run)'}
                             </button>
 
                             {/* Actual Import Button - Native for Reliability */}
@@ -415,12 +453,12 @@ export default function ImportPage() {
                                     handleImport(false);
                                 }} 
                                 disabled={loading} 
-                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-6 py-2 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-6 py-2 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
-                                {loading ? 'Importing... Do not close' : 'Confirm & Import All'}
+                                {loading ? 'Importing...' : 'Confirm & Import All'}
                             </button>
 
-                             {rowResults.some(r => !r.success) && (
+                             {rowResults.some(r => !r.success) && !loading && (
                                 <Button
                                     variant="secondary"
                                     onClick={() => {
