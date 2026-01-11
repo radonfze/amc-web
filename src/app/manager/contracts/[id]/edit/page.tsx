@@ -259,6 +259,21 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
     }
 
 
+    // Helper to fetch English Area Name
+    async function fetchAreaName(lat: number, lng: number) {
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`);
+            const data = await res.json();
+            if (data && data.address) {
+                const a = data.address;
+                return a.suburb || a.neighbourhood || a.quarter || a.residential || a.village || a.city_district || a.district || a.town || a.city || '';
+            }
+        } catch (e) {
+            console.error("Reverse Geocode Error", e);
+        }
+        return "";
+    }
+
     function handleGPS() {
         if (!navigator.geolocation) {
              alert('GPS not supported on this browser');
@@ -271,11 +286,20 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
             maximumAge: 0
         };
 
-        navigator.geolocation.getCurrentPosition((pos) => {
-            const lat = pos.coords.latitude.toFixed(6);
-            const lng = pos.coords.longitude.toFixed(6);
-            const dist = haversine(Number(lat), Number(lng), OFFICE_LAT, OFFICE_LNG).toFixed(3);
-            setForm((prev) => ({ ...prev, latitude: lat, longitude: lng, distance: dist }));
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const dist = haversine(lat, lng, OFFICE_LAT, OFFICE_LNG).toFixed(3);
+            
+            const areaName = await fetchAreaName(lat, lng);
+
+            setForm((prev) => ({ 
+                ...prev, 
+                latitude: lat.toFixed(6), 
+                longitude: lng.toFixed(6), 
+                distance: dist,
+                locationName: areaName || prev.locationName
+            }));
         }, (err) => {
             console.error(err);
             let msg = "GPS Error: " + err.message;
@@ -358,13 +382,15 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                             initialLat={parseFloat(form.latitude) || OFFICE_LAT}
                             initialLng={parseFloat(form.longitude) || OFFICE_LNG}
                             onCancel={() => setShowMap(false)}
-                            onSelect={(lat, lng) => {
+                            onSelect={async (lat, lng) => {
                                 const dist = haversine(lat, lng, OFFICE_LAT, OFFICE_LNG).toFixed(3);
+                                const areaName = await fetchAreaName(lat, lng);
                                 setForm(prev => ({
                                     ...prev,
                                     latitude: lat.toFixed(6),
                                     longitude: lng.toFixed(6),
-                                    distance: dist
+                                    distance: dist,
+                                    locationName: areaName || prev.locationName
                                 }));
                                 setShowMap(false);
                             }}
