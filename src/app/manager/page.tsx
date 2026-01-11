@@ -105,7 +105,9 @@ export default function ManagerDashboard() {
         amcQueue: [] as any[], // Critical items
         pipeline: [] as any[],
         renewalsList: [] as any[],
-        schedule: [] as any[]
+        schedule: [] as any[],
+        topVisits: [] as any[],
+        topCollections: [] as any[]
     });
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -236,6 +238,10 @@ export default function ManagerDashboard() {
             // 9. Schedule
              const { data: schedule } = await supabase.from('today_tech_schedule').select('*').limit(5);
 
+            // 10. Top stats (Restored)
+            const { data: topVisits } = await supabase.rpc('top_tech_visits_30days');
+            const { data: topCollections } = await supabase.rpc('top_tech_collections_30days');
+
             setStats({
                 dueToday: dueToday || 0,
                 overdueCount: overdueCount || 0,
@@ -248,7 +254,9 @@ export default function ManagerDashboard() {
                 amcQueue: amcQueue || [],
                 pipeline: pipe,
                 renewalsList: [], // Clean up unused
-                schedule: schedule || []
+                schedule: schedule || [],
+                topVisits: topVisits || [],
+                topCollections: topCollections || []
             });
             setLastUpdated(new Date());
             setLoading(false);
