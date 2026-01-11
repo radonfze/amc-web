@@ -683,7 +683,7 @@ export default function ImportPage() {
                             </p>
                         </div>
                         <Button 
-                            variant="destructive" 
+                            variant="danger" 
                             onClick={handleResetData}
                         >
                             <TrashIcon className="w-4 h-4 mr-2" />
