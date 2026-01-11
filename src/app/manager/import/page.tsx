@@ -18,10 +18,10 @@ type Row = {
     lng: string;         
     renewal_date: string;
     amc_date: string;    
-    days_from?: string;  
-    renewed?: string;
-    status?: string;
-    distance?: string;
+    
+    // Debug raw values
+    rawLat?: string;
+    rawLng?: string;
     
     // For indexing original
     [key: string]: any; 
@@ -31,7 +31,8 @@ type ClassifiedRow = Row & {
     customerType: 'existing' | 'new';
     renewalStatus: 'renewed' | 'not_renewed' | 'new_customer';
     matchedCustomerId?: number;
-    coordStatus?: 'ok' | 'swapped' | 'invalid';
+    coordStatus?: 'ok' | 'swapped' | 'invalid' | 'parsed_dms';
+    coordMessage?: string; // Reason for invalidity
 };
 
 export default function ImportPage() {
@@ -73,6 +74,29 @@ export default function ImportPage() {
         link.click();
         document.body.removeChild(link);
     }
+    
+    // --- ROBUST COORDINATE PARSER ---
+    function parseCoordinate(val: string): number {
+        if (!val) return 0;
+        
+        // Remove spaces
+        let clean = val.trim();
+        
+        // 1. Check for DMS like "25-01-00" or "25-01-00.00"
+        // Regex for DD-MM-SS with hyphens or spaces
+        const dmsRegex = /^(\d{1,3})[-: ](\d{1,2})[-: ](\d{1,2}(?:\.\d+)?)$/; 
+        const match = clean.match(dmsRegex);
+        
+        if (match) {
+            const deg = parseFloat(match[1]);
+            const min = parseFloat(match[2]);
+            const sec = parseFloat(match[3]);
+            return deg + (min / 60) + (sec / 3600);
+        }
+        
+        // 2. Normal Float (handles 25.123 and 25)
+        return parseFloat(clean);
+    }
 
     async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
@@ -110,10 +134,16 @@ export default function ImportPage() {
                     const gra = getVal(['GRA No', 'GRA No.', 'GRA', 'GRA NO']);
                     const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.', 'LIC NO', 'LICENSE']);
                     const contact = getVal(['CONTACT NO', 'CONTACT NO.', 'CONTACT', 'PHONE']);
-                    const lat = getVal(['LATT', 'LAT', 'LATITUDE']);
-                    const lng = getVal(['LONGI', 'LONGIT', 'LONG', 'LONGITUDE']);
+                    
+                    // Capture RAW values for debugging
+                    const rawLat = getVal(['LATT', 'LAT', 'LATITUDE']);
+                    const rawLng = getVal(['LONGI', 'LONGIT', 'LONG', 'LONGITUDE']);
+                    
                     const renewal = getVal(['RENEWAL DATE', 'RENEWAL DATE:', 'RENEWAL']);
                     const amcDate = getVal(['AMC Date', 'AMC Date:', 'AMC START']);
+                    
+                    // Initial Parse attempt (will be refined in fixAll)
+                    // We store raw first
                     
                     // Match Logic
                     const match = customers?.find(
@@ -141,8 +171,10 @@ export default function ImportPage() {
                         gra_no: gra,
                         license_no: license,
                         contact_no: contact,
-                        lat,
-                        lng,
+                        lat: rawLat, // Start with Raw
+                        lng: rawLng, // Start with Raw
+                        rawLat,
+                        rawLng,
                         renewal_date: renewal,
                         amc_date: amcDate,
                         customerType,
@@ -153,16 +185,12 @@ export default function ImportPage() {
                         'LICENSE NO.': license,
                         'GRA No.': gra,
                         'CONTACT NO.': contact,
-                        'LATT': lat,
-                        'LONGIT': lng,
+                        'LATT': rawLat,
+                        'LONGIT': rawLng,
                         'RENEWAL DATE:': renewal,
                         'AMC Date:': amcDate,
                         
-                        // Pass others through
-                        'Days from': '',
-                        'Renewed': '',
-                        'Status': '',
-                        'Distance': ''
+                        coordStatus: undefined
                     };
                 });
 
@@ -170,6 +198,9 @@ export default function ImportPage() {
                 setSummary(buildSummary(classified));
                 setLoading(false);
                 setRowResults([]); 
+                
+                // Immediately Run Analysis to show status
+                analyzeRows(classified);
             },
         });
     }
@@ -208,8 +239,6 @@ export default function ImportPage() {
         setRowResults([]);
         setImportStatus('Starting...');
 
-        console.log("Starting Import. DryRun:", isDryRun);
-
         const BATCH_SIZE = 50; 
         const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
         let allResults: any[] = [];
@@ -233,7 +262,7 @@ export default function ImportPage() {
                  // Accommodate index offset for results
                 const batchResults = (res.rowResults || []).map((r: any) => ({
                     ...r,
-                    index: r.index + start // Adjust index to match global position
+                    index: r.index + start 
                 }));
 
                 allResults = [...allResults, ...batchResults];
@@ -261,59 +290,71 @@ export default function ImportPage() {
         }
     }
 
-    // Client-side fix functions
-    function fixAll() {
-        alert("Running Auto-Fix: Normalizing Names, Phones, and Enforcing UAE Coordinates.");
-        const updated = rows.map((r) => {
-            const fixed: any = { ...r };
+    // Renamed to analyze to be clear it runs automatically or manually
+    function analyzeRows(currentRows: ClassifiedRow[] = rows) {
+        
+        const updated = currentRows.map((r) => {
+            const fixed: ClassifiedRow = { ...r };
             
             // Fix Name capitalization
             if (fixed.NAME) fixed.NAME = fixed.NAME.toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
             if (fixed.LOCATION) fixed.LOCATION = fixed.LOCATION.toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
 
-            // Fix Phone (remove non-digits, ensure leading 0)
+            // Fix Phone 
             if (fixed.contact_no) {
                  const digits = fixed.contact_no.replace(/\D/g, '');
                  if (digits.length === 9) fixed.contact_no = '0' + digits;
                  else if (digits.length === 10) fixed.contact_no = digits;
-                 // Sync back to API key
                  fixed['CONTACT NO.'] = fixed.contact_no;
             }
 
-            // Lat/Lng Fixes - Strict UAE Validation
-            // UAE is approx Lat: 22-28, Long: 51-57
-            let lat = parseFloat(r.lat || r.LATT || '0');
-            let lng = parseFloat(r.lng || r.LONGI || '0');
+            // --- ROBUST COORDINATE LOGIC ---
+            // 1. Try Parse Raw Lat/Lng
+            let lat = parseCoordinate(fixed.rawLat || fixed.LATT || '');
+            let lng = parseCoordinate(fixed.rawLng || fixed.LONGI || '');
             
-            let status = 'ok';
+            let status: ClassifiedRow['coordStatus'] = 'ok';
+            let message = '';
 
-            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-                // Check if Swapped
-                // If Lat is > 50 (Russia/Europe/Swapped Long) AND Lng is < 50 (Swapped Lat)
-                if (lat > 50 && lng < 40) {
-                     // SWAP
+            if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+                status = 'invalid';
+                message = 'Missing/NaN';
+            } else {
+                // 2. Check Swapped
+                // If Lat > 50 (like 55.x) and Lng < 40 (like 25.x), it's swapped
+                if (lat > 40 && lng < 40) {
                      const temp = lat; lat = lng; lng = temp;
                      status = 'swapped';
+                     message = 'Swapped Lat/Lng';
                 }
 
-                // Final Check for UAE
-                // Assuming RAK/Dubai focus
-                if (lat < 22 || lat > 28 || lng < 50 || lng > 60) {
+                // 3. Final Dubai/UAE Check
+                // Lat should be 22-27
+                // Lng should be 51-57
+                if (lat < 22 || lat > 28) {
                     status = 'invalid';
+                    message += `Lat ${lat.toFixed(4)} out of UAE range (22-28). `;
                 }
-
-                fixed.lat = lat.toString();
-                fixed.lng = lng.toString();
-                fixed.LATT = fixed.lat;
-                fixed.LONGIT = fixed.lng;
-                fixed.coordStatus = status;
+                if (lng < 50 || lng > 60) {
+                    status = 'invalid';
+                    message += `Lng ${lng.toFixed(4)} out of UAE range (50-60). `;
+                }
+                
+                // If we detected DMS (e.g. integer part was changed significantly during parse?)
+                // Actually parseCoordinate handles it silently.
             }
+
+            fixed.lat = lat.toString();
+            fixed.lng = lng.toString();
+            fixed.LATT = fixed.lat;
+            fixed.LONGIT = fixed.lng;
+            fixed.coordStatus = status;
+            fixed.coordMessage = message;
 
             return fixed;
         });
 
         setRows(updated);
-        // Recalc summary
         setSummary(buildSummary(updated));
     }
 
@@ -321,30 +362,20 @@ export default function ImportPage() {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow-sm gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Import AMC Data</h1>
-                    <p className="text-gray-500 text-sm">Bulk import CSV to database</p>
+                    <h1 className="text-2xl font-bold text-gray-900">Import AMC Data (Improved)</h1>
+                    <p className="text-gray-500 text-sm">Supports DMS (25-01-00) and Decimal formats.</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                     {/* Reset DB Button */}
                      <button 
                         type="button"
                         onClick={async () => {
-                            if (confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas. This action cannot be undone. Are you sure?')) {
+                            if (confirm('DANGER: Wipe database?')) {
                                 setLoading(true);
-                                try {
-                                    const res = await fetch('/api/admin/reset-db', { method: 'POST' });
-                                    const json = await res.json();
-                                    if (json.success) {
-                                        alert('Database wiped successfully.');
-                                        window.location.reload();
-                                    } else {
-                                        alert('Failed: ' + json.error);
-                                    }
-                                } catch(e) { console.error(e); alert('Error wiping'); }
-                                setLoading(false);
+                                await fetch('/api/admin/reset-db', { method: 'POST' });
+                                alert('Database wiped.');
+                                window.location.reload();
                             }
                         }}
-                        disabled={loading}
                         className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-medium flex items-center gap-2"
                     >
                         <TrashIcon className="w-5 h-5" />
@@ -355,13 +386,9 @@ export default function ImportPage() {
                         variant="outline" 
                         onClick={downloadTemplate} 
                         className="flex items-center gap-2"
-                        title="Download empty CSV template"
                     >
                         <CloudArrowDownIcon className="w-5 h-5" /> Template
                     </Button>
-                    <a href="/manager/import/history" className="text-sm text-blue-600 hover:underline flex items-center px-2">
-                        View History →
-                    </a>
                 </div>
             </div>
 
@@ -386,13 +413,12 @@ export default function ImportPage() {
                     </div>
 
                     {rows.length > 0 && (
-                        <Button variant="secondary" onClick={fixAll} title="Auto-fix common errors (Names, Phones, Coords)">
-                            ⚡ Fix All (UAE Coords)
+                        <Button variant="secondary" onClick={() => analyzeRows()} title="Re-run analysis">
+                            ↻ Re-Analyze
                         </Button>
                     )}
                 </div>
 
-                {/* --- PROGRESS BAR --- */}
                 {loading && (
                     <div className="w-full bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4 shadow-sm animate-pulse">
                         <div className="flex justify-between text-sm font-bold text-blue-800 mb-2">
@@ -405,81 +431,38 @@ export default function ImportPage() {
                                 style={{ width: `${progress}%` }}
                             ></div>
                         </div>
-                        <p className="text-xs text-blue-600 mt-2 text-center">Do not close this window.</p>
                     </div>
                 )}
 
-
                 {summary && !loading && (
-                    <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100">
-                        <div className="font-medium text-gray-900">Summary:</div>
-                        <div>Total rows: <span className="font-bold">{summary.total}</span></div>
-                        <div className="text-green-700">Existing customers: {summary.existing}</div>
-                        <div className="pl-4">→ Renewed: {summary.renewed}</div>
-                        <div className="pl-4">→ Not renewed: {summary.notRenewed}</div>
-                        <div className="text-blue-700">New customers: {summary.newCustomers}</div>
+                    <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>Total: <span className="font-bold">{summary.total}</span></div>
+                        <div className="text-green-700">Exist/Renew: {summary.renewed}</div>
+                        <div className="text-red-700">Not Renewed: {summary.notRenewed}</div>
+                        <div className="text-blue-700">New: {summary.newCustomers}</div>
                     </div>
                 )}
 
                 {rows.length > 0 && (
                     <div className="flex flex-col gap-3 pt-4 border-t">
-                        <h3 className="font-semibold text-gray-800">2. Import Options</h3>
-                        
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                                type="checkbox"
-                                checked={skipInvalid}
-                                onChange={(e) => setSkipInvalid(e.target.checked)}
-                                className="w-4 h-4 text-blue-600 rounded"
-                            />
-                            Skip Invalid Rows (Don't stop on error)
-                        </label>
-
                         <div className="flex flex-wrap gap-4 mt-2">
-                             {/* Simulation Button - Native for Reliability */}
                             <button 
                                 type="button"
                                 onClick={() => handleImport(true)} 
                                 disabled={loading} 
                                 className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded border border-gray-300 font-medium"
                             >
-                                {loading ? 'Wait...' : 'Run Simulation (Dry Run)'}
+                                Run Simulation (Dry Run)
                             </button>
 
-                            {/* Actual Import Button - Native for Reliability */}
                             <button 
                                 type="button"
-                                onClick={() => {
-                                    handleImport(false);
-                                }} 
+                                onClick={() => handleImport(false)} 
                                 disabled={loading} 
-                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-6 py-2 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-6 py-2 rounded font-bold disabled:opacity-50"
                             >
-                                {loading ? 'Importing...' : 'Confirm & Import All'}
+                                Confirm & Import All
                             </button>
-
-                             {rowResults.some(r => !r.success) && !loading && (
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => {
-                                        const failed = rowResults.filter(r => !r.success);
-                                        const csvRows = [
-                                            'Row,Message',
-                                            ...failed.map(r => `${r.index + 2},"${(r.message || "").replace(/"/g, '""')}"`)
-                                        ];
-                                        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-                                        const url = URL.createObjectURL(blob);
-                                        const a = document.createElement('a');
-                                        a.href = url;
-                                        a.download = 'failed_rows.csv';
-                                        a.click();
-                                        URL.revokeObjectURL(url);
-                                    }}
-                                    className="w-full md:w-auto bg-gray-600 hover:bg-gray-700 text-white"
-                                >
-                                    Export Failed Rows
-                                </Button>
-                            )}
                         </div>
                     </div>
                 )}
@@ -487,49 +470,39 @@ export default function ImportPage() {
 
             {rows.length > 0 && rowResults.length === 0 && (
                 <Card>
-                    <h2 className="font-semibold text-gray-800 mb-4">Preview (First 20 rows)</h2>
+                    <h2 className="font-semibold text-gray-800 mb-4">Preview (First 50 rows)</h2>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full text-xs text-left">
+                        <table className="min-w-full text-xs text-left border-collapse">
                             <thead className="bg-gray-100 text-gray-700 uppercase font-medium">
                                 <tr>
-                                    <th className="px-4 py-2">Name</th>
-                                    <th className="px-4 py-2">Location</th>
-                                    <th className="px-4 py-2">License / GRA</th>
-                                    <th className="px-4 py-2">Coordinates</th>
-                                    <th className="px-4 py-2">CoordStatus</th>
-                                    <th className="px-4 py-2">Renewal Date</th>
-                                    <th className="px-4 py-2">Type</th>
-                                    <th className="px-4 py-2">Status</th>
+                                    <th className="px-2 py-2 border">Name</th>
+                                    <th className="px-2 py-2 border">Raw Latt</th>
+                                    <th className="px-2 py-2 border">Raw Longi</th>
+                                    <th className="px-2 py-2 border">Parsed Coords (Lat, Lng)</th>
+                                    <th className="px-2 py-2 border">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {rows.slice(0, 20).map((r, i) => (
-                                    <tr key={i} className="hover:bg-gray-50">
-                                        <td className="px-4 py-2 font-medium">{r.NAME}</td>
-                                        <td className="px-4 py-2 text-gray-500">{r.LOCATION}</td>
-                                        <td className="px-4 py-2">{r.license_no} / {r.gra_no}</td>
-                                        <td className="px-4 py-2 bg-gray-50 font-mono text-[10px]">
-                                            {r.lat}, {r.lng}
+                                {rows.slice(0, 50).map((r, i) => (
+                                    <tr key={i} className={`hover:bg-gray-50 ${r.coordStatus === 'invalid' ? 'bg-red-50' : ''}`}>
+                                        <td className="px-2 py-2 border max-w-[150px] truncate" title={r.NAME}>{r.NAME}</td>
+                                        
+                                        {/* DEBUG COLUMNS */}
+                                        <td className="px-2 py-2 border font-mono text-gray-600">{r.rawLat}</td>
+                                        <td className="px-2 py-2 border font-mono text-gray-600">{r.rawLng}</td>
+                                        
+                                        <td className="px-2 py-2 border font-mono font-bold">
+                                            {parseFloat(r.lat).toFixed(5)}, {parseFloat(r.lng).toFixed(5)}
                                         </td>
-                                        <td className="px-4 py-2">
+                                        <td className="px-2 py-2 border">
                                             {r.coordStatus === 'swapped' && <span className="text-orange-600 font-bold">Swapped</span>}
-                                            {r.coordStatus === 'invalid' && <span className="text-red-600 font-bold">Invalid (Not UAE)</span>}
+                                            {r.coordStatus === 'invalid' && (
+                                                <div className="flex flex-col">
+                                                    <span className="text-red-600 font-bold">INVALID</span>
+                                                    <span className="text-[9px] text-red-500">{r.coordMessage}</span>
+                                                </div>
+                                            )}
                                             {r.coordStatus === 'ok' && <span className="text-green-600">OK</span>}
-                                            {!r.coordStatus && <span className="text-gray-400">-</span>}
-                                        </td>
-                                        <td className="px-4 py-2">{r.renewal_date}</td>
-                                        <td className="px-4 py-2">
-                                            <span className={`px-2 py-0.5 rounded-full ${r.customerType === 'existing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                                }`}>
-                                                {r.customerType === 'existing' ? 'Exist' : 'New'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            <span className={`px-2 py-0.5 rounded-full ${r.renewalStatus === 'renewed' ? 'bg-green-100 text-green-700' :
-                                                r.renewalStatus === 'not_renewed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                                                }`}>
-                                                {r.renewalStatus.replace('_', ' ')}
-                                            </span>
                                         </td>
                                     </tr>
                                 ))}
@@ -554,11 +527,10 @@ export default function ImportPage() {
                             </thead>
                             <tbody>
                                 {rowResults.map((r, i) => (
-                                    <tr key={i} className={r.success ? 'bg-green-50' : (r.message && r.message.startsWith('Skipped') ? 'bg-yellow-50' : 'bg-red-50')}>
+                                    <tr key={i} className={r.success ? 'bg-green-50' : 'bg-red-50'}>
                                         <td className="px-4 py-2 border">{r.index + 2}</td>
                                         <td className="px-4 py-2 border font-bold">
-                                            {r.success ? <span className="text-green-600">SUCCESS</span> :
-                                                (r.message && r.message.startsWith('Skipped') ? <span className="text-yellow-600">SKIPPED</span> : <span className="text-red-600">FAILED</span>)}
+                                            {r.success ? <span className="text-green-600">SUCCESS</span> : <span className="text-red-600">FAILED</span>}
                                         </td>
                                         <td className="px-4 py-2 border text-gray-700">{r.message}</td>
                                     </tr>
