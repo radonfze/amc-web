@@ -6,6 +6,7 @@ import ContractRow from '@/components/ContractRow';
 import Link from 'next/link';
 import { MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline'; 
 import { useSearchParams } from 'next/navigation';
+import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 
 function ContractsListContent() {
     const [contracts, setContracts] = useState<any[]>([]);
@@ -15,6 +16,11 @@ function ContractsListContent() {
     
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+    // Delete Modal State
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleteTargetIds, setDeleteTargetIds] = useState<number[]>([]);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const searchParams = useSearchParams();
     const filterType = searchParams.get('filter'); // Get filter from URL
@@ -110,22 +116,34 @@ function ContractsListContent() {
         }
     };
 
-    const handleBulkDelete = async () => {
-        if (!confirm(`Are you sure you want to delete ${selectedIds.size} contracts? This action cannot be undone.`)) return;
-
-        const idsToDelete = Array.from(selectedIds);
-        await deleteContracts(idsToDelete);
-        setSelectedIds(new Set());
+    const handleBulkDelete = () => {
+        setDeleteTargetIds(Array.from(selectedIds));
+        setDeleteDialogOpen(true);
     };
 
-    const handleSingleDelete = async (id: number) => {
-        // Confirmation is handled inside ContractRow to avoid double confirm
-        await deleteContracts([id]);
+    const handleSingleDelete = (id: number) => {
+        setDeleteTargetIds([id]);
+        setDeleteDialogOpen(true);
+    };
+
+    const executeDelete = async () => {
+        if (deleteTargetIds.length === 0) return;
+        setIsDeleting(true);
+        await deleteContracts(deleteTargetIds);
+        setIsDeleting(false);
+        setDeleteDialogOpen(false);
+        setDeleteTargetIds([]);
+        if (selectedIds.size > 0 && deleteTargetIds.length === selectedIds.size) {
+             setSelectedIds(new Set()); // Clear selection if it was a bulk delete
+        } else {
+             // If we deleted single item but it was selected, remove it from selection
+             const newSelected = new Set(selectedIds);
+             deleteTargetIds.forEach(id => newSelected.delete(id));
+             setSelectedIds(newSelected);
+        }
     };
 
     const deleteContracts = async (ids: number[]) => {
-        setLoading(true);
-
         // 1. Manually Cascade: Delete Visits & Events & Payments
         // We do this because database might restrict delete if children exist
         
@@ -160,8 +178,6 @@ function ContractsListContent() {
             .delete()
             .in('id', ids);
 
-        setLoading(false);
-
         if (error) {
             console.error(error);
             // Detailed alert for user
@@ -171,8 +187,7 @@ function ContractsListContent() {
             const remaining = contracts.filter(c => !ids.includes(c.id));
             setContracts(remaining);
             setFilteredContracts(prev => prev.filter(c => !ids.includes(c.id)));
-            
-            alert('Contract(s) deleted successfully.');
+            // Success logic handled by execution chain (closing modal)
             loadContracts(); 
         }
     };
@@ -209,6 +224,15 @@ function ContractsListContent() {
 
     return (
         <div className="relative min-h-[500px]"> 
+            <DeleteConfirmDialog 
+                isOpen={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                onConfirm={executeDelete}
+                isDeleting={isDeleting}
+                title={deleteTargetIds.length > 1 ? `Delete ${deleteTargetIds.length} Contracts?` : `Delete Contract?`}
+                message={`Are you sure you want to delete ${deleteTargetIds.length > 1 ? 'these contracts' : 'this contract'}? This record will be permanently removed and cannot be recovered.`}
+            />
+
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-gray-900">Contracts</h1>

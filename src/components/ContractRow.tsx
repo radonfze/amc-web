@@ -28,8 +28,10 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
 
     const handleDeleteClick = (e: MouseEvent) => {
         // e.preventDefault(); // allow default button behavior
-        e.stopPropagation(); // Stop bubble to Link (though logic separates them now, good safety)
-        if (onDelete && confirm(`Are you sure you want to delete contract for ${contract.customer_name}?`)) {
+        e.stopPropagation(); // Stop bubble to Link
+        
+        // Directly trigger onDelete (Parent handles confirmation modal)
+        if (onDelete) {
             onDelete(contract.id);
         }
     };
