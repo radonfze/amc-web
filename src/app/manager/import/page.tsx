@@ -649,6 +649,50 @@ export default function ImportPage() {
                     </div>
                 </Card>
             )}
+
+             {/* Reset Data Section */}
+             <div className="mt-12 pt-8 border-t border-red-200">
+                    <h2 className="text-xl font-bold text-red-700 mb-4">Danger Zone</h2>
+                    <div className="bg-red-50 border border-red-200 p-6 rounded flex items-center justify-between">
+                        <div>
+                            <h3 className="font-bold text-red-800">Clear All Dashboard Data</h3>
+                            <p className="text-sm text-red-600 mt-1">
+                                This will permanently delete <strong>ALL</strong> contracts and reset the dashboard to empty.
+                                <br/>Detailed customer records in 'Customers' table might remain, but all AMCs will be gone.
+                            </p>
+                        </div>
+                        <Button 
+                            variant="destructive" 
+                            onClick={async () => {
+                                const confirmText = prompt("Type 'DELETE' to confirm clearing all data:");
+                                if (confirmText === 'DELETE') {
+                                    setLoading(true);
+                                    try {
+                                        const res = await fetch('/api/admin/clear-data', { method: 'POST' });
+                                        if (res.ok) {
+                                            alert("Data Cleared Successfully.");
+                                            window.location.href = '/manager';
+                                        } else {
+                                            alert("Failed to clear data.");
+                                        }
+                                    } catch (e) {
+                                        alert("Error clearing data.");
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }
+                            }}
+                        >
+                            <TrashIcon className="w-4 h-4 mr-2" />
+                            Delete All Data
+                        </Button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+            </div>
         </div>
     );
 }
