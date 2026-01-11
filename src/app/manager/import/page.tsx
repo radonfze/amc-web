@@ -192,7 +192,11 @@ export default function ImportPage() {
             return;
         }
 
-        if(!isDryRun && !confirm("Double check: You are about to Import into LIVE DATABASE. Proceed?")) return;
+        const msg = isDryRun 
+            ? "Run Simulation? This will not change data." 
+            : "⚠️ START LIVE IMPORT? \n\nThis will write to the database. \nMake sure you have reset the DB if this is a fresh import.";
+            
+        if(!confirm(msg)) return;
 
         setLoading(true);
         setRowResults([]);
@@ -231,6 +235,7 @@ export default function ImportPage() {
 
     // Client-side fix functions
     function fixAll() {
+        alert("Fixing data in browser...");
         const updated = rows.map((r) => {
             const fixed: any = { ...r };
             
@@ -264,6 +269,8 @@ export default function ImportPage() {
         });
 
         setRows(updated);
+        // Recalc summary
+        setSummary(buildSummary(updated));
     }
 
     return (
@@ -274,8 +281,8 @@ export default function ImportPage() {
                     <p className="text-gray-500 text-sm">Bulk import CSV to database</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                     <Button 
-                        variant="danger"
+                     {/* Reset DB Button */}
+                     <button 
                         type="button"
                         onClick={async () => {
                             if (confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas. This action cannot be undone. Are you sure?')) {
@@ -294,11 +301,11 @@ export default function ImportPage() {
                             }
                         }}
                         disabled={loading}
-                        className="bg-red-600 hover:bg-red-700 text-white"
+                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-medium flex items-center gap-2"
                     >
-                        <TrashIcon className="w-5 h-5 mr-2" />
+                        <TrashIcon className="w-5 h-5" />
                         Reset Database
-                    </Button>
+                    </button>
 
                      <Button 
                         variant="outline" 
@@ -369,28 +376,27 @@ export default function ImportPage() {
                         </label>
 
                         <div className="flex flex-wrap gap-4 mt-2">
-                             {/* Simulation Button */}
-                            <Button 
+                             {/* Simulation Button - Native for Reliability */}
+                            <button 
                                 type="button"
                                 onClick={() => handleImport(true)} 
                                 disabled={loading} 
-                                variant="outline"
-                                className="w-full md:w-auto"
+                                className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded border border-gray-300 font-medium"
                             >
-                                {loading ? 'Processing...' : 'Run Simulation (Dry Run)'}
-                            </Button>
+                                {loading ? '...' : 'Run Simulation (Dry Run)'}
+                            </button>
 
-                            {/* Actual Import Button */}
-                            <Button 
+                            {/* Actual Import Button - Native for Reliability */}
+                            <button 
                                 type="button"
                                 onClick={() => {
                                     handleImport(false);
                                 }} 
                                 disabled={loading} 
-                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-6 py-2 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {loading ? 'Importing...' : 'Confirm & Import All'}
-                            </Button>
+                                {loading ? 'Importing... Do not close' : 'Confirm & Import All'}
+                            </button>
 
                              {rowResults.some(r => !r.success) && (
                                 <Button
