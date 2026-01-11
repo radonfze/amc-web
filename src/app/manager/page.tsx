@@ -441,7 +441,7 @@ export default function ManagerDashboard() {
                         </div>
                     </Card>
 
-                    <Link href="/manager/techs" className="block hover:shadow-lg transition">
+                    <Link href="/manager/technicians" className="block hover:shadow-lg transition">
                         <TechTable title="Top Techs (Visits)" rows={stats.topVisits} metric="visits" />
                     </Link>
                 </div>
