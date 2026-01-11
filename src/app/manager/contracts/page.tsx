@@ -124,23 +124,37 @@ function ContractsListContent() {
     };
 
     const deleteContracts = async (ids: number[]) => {
+        setLoading(true);
+
+        // 1. Manually Cascade: Delete Visits
+        // We do this because database might restrict delete if children exist
+        const { error: visitError } = await supabase
+            .from('amc_visits')
+            .delete()
+            .in('contract_id', ids);
+
+        if (visitError) {
+            console.error('Error deleting visits (Manual Cascade):', visitError);
+        }
+
+        // 2. Contracts
         const { error } = await supabase
             .from('amc_contracts') 
             .delete()
             .in('id', ids);
 
+        setLoading(false);
+
         if (error) {
-            alert('Error deleting contracts: ' + error.message);
+            console.error(error);
+            alert('Error deleting contracts: ' + error.message + '\n\nPlease check console involved relations.');
         } else {
             // Optimistic update
             const remaining = contracts.filter(c => !ids.includes(c.id));
             setContracts(remaining);
-            // setFilteredContracts is updated via useEffect on `contracts` change or manually if needed
-            // But doing it manual here for immediate feedback, deferring to useEffect is safer but slower UI
-            // However, contracts state update triggers useEffect, so:
-            setContracts(remaining); 
+            // Explicitly update filtered list for immediate feedback
+            setFilteredContracts(prev => prev.filter(c => !ids.includes(c.id)));
             
-            // Wait a tick or just alert
             alert('Contract(s) deleted successfully.');
             // Reload to be safe
             loadContracts(); 
