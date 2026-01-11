@@ -5,20 +5,19 @@ import Papa from 'papaparse';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { CloudArrowDownIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import { CloudArrowDownIcon, ArrowUpTrayIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 // We map the incoming CSV to a standard internal structure
 type Row = {
     NAME: string;
     LOCATION: string;
-    gra_no: string;      // form 'GRA No.'
-    license_no: string;  // form 'LICENSE NO:' or 'LICENSE NO.'
-    contact_no: string;  // form 'CONTACT NO'
-    lat: string;         // form 'LATT'
-    lng: string;         // form 'LONGI' or 'LONGIT'
-    renewal_date: string;// form 'RENEWAL DATE' or 'RENEWAL DATE:'
-    amc_date: string;    // form 'AMC Date' or 'AMC Date:'
-    // Extras
+    gra_no: string;      
+    license_no: string;  
+    contact_no: string;  
+    lat: string;         
+    lng: string;         
+    renewal_date: string;
+    amc_date: string;    
     days_from?: string;  
     renewed?: string;
     status?: string;
@@ -192,21 +191,36 @@ export default function ImportPage() {
         setLoading(true);
         setRowResults([]);
 
-        const res = await fetch('/api/import-amc', {
-            method: 'POST',
-            body: JSON.stringify({ rows, dryRun: isDryRun, skipInvalid }),
-            headers: { 'Content-Type': 'application/json' },
-        }).then((r) => r.json());
+        console.log("Starting Import. DryRun:", isDryRun);
 
-        setLoading(false);
-
-        if (res.error) {
-            alert('Import failed: ' + res.error);
-        } else {
-            console.log("Import result", res);
+        try {
+            const res = await fetch('/api/import-amc', {
+                method: 'POST',
+                body: JSON.stringify({ rows, dryRun: isDryRun, skipInvalid }),
+                headers: { 'Content-Type': 'application/json' },
+            }).then((r) => r.json());
+    
+            setLoading(false);
+    
+            if (res.error) {
+                alert('Import failed: ' + res.error);
+                console.error("Import Error:", res.error);
+            } else {
+                console.log("Import result", res);
+                if (!isDryRun) {
+                    alert(`Import Complete! Imported ${res.rowResults.filter((r:any) => r.success).length} rows.`);
+                    window.location.href = '/manager/contracts'; // Redirect on success
+                } else {
+                    alert('Simulation Complete.');
+                }
+            }
+    
+            setRowResults(res.rowResults || []);
+        } catch (error: any) {
+            setLoading(false);
+            console.error(error);
+            alert("Network/Server Error: " + error.message);
         }
-
-        setRowResults(res.rowResults || []);
     }
 
     // Client-side fix functions
@@ -227,7 +241,7 @@ export default function ImportPage() {
                  fixed['CONTACT NO.'] = fixed.contact_no;
             }
 
-            // Lat/Lng Swapping
+            // Lat/Lng Swapping (Basic Heuristic)
             let lat = parseFloat(r.lat || '');
             let lng = parseFloat(r.lng || '');
             if (!isNaN(lat) && !isNaN(lng)) {
@@ -235,7 +249,6 @@ export default function ImportPage() {
                     const temp = lat; lat = lng; lng = temp;
                     fixed.lat = lat.toString();
                     fixed.lng = lng.toString();
-                    // Sync back
                     fixed.LATT = fixed.lat;
                     fixed.LONGIT = fixed.lng;
                 }
@@ -245,24 +258,68 @@ export default function ImportPage() {
         });
 
         setRows(updated);
-        // alert('Applied auto-fixes to ' + updated.length + ' rows.'); 
+    }
+
+    async function handleResetDB() {
+        if (!confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas.\n\nType "YES" to confirm.')) return;
+        
+        setLoading(true);
+        try {
+            const res = await fetch('/api/admin/reset-db', { method: 'POST' });
+            const json = await res.json();
+            if (json.success) {
+                alert('Database wiped successfully.');
+                window.location.reload();
+            } else {
+                alert('Failed: ' + json.error);
+            }
+        } catch(e) { console.error(e); alert('Error wiping'); }
+        setLoading(false);
     }
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold text-gray-900">Import AMC Data</h1>
-                <div className="flex gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow-sm gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Import AMC Data</h1>
+                    <p className="text-gray-500 text-sm">Bulk import CSV to database</p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                     <Button 
+                        variant="destructive"
+                        onClick={async () => {
+                            if (confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas. This action cannot be undone. Are you sure?')) {
+                                setLoading(true);
+                                try {
+                                    const res = await fetch('/api/admin/reset-db', { method: 'POST' });
+                                    const json = await res.json();
+                                    if (json.success) {
+                                        alert('Database wiped successfully.');
+                                        window.location.reload();
+                                    } else {
+                                        alert('Failed: ' + json.error);
+                                    }
+                                } catch(e) { console.error(e); alert('Error wiping'); }
+                                setLoading(false);
+                            }
+                        }}
+                        disabled={loading}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                        <TrashIcon className="w-5 h-5 mr-2" />
+                        Reset Database
+                    </Button>
+
                      <Button 
                         variant="outline" 
                         onClick={downloadTemplate} 
                         className="flex items-center gap-2"
-                        title="Download empty CSV template matching required format"
+                        title="Download empty CSV template"
                     >
-                        <CloudArrowDownIcon className="w-5 h-5" /> Download Template
+                        <CloudArrowDownIcon className="w-5 h-5" /> Template
                     </Button>
-                    <a href="/manager/import/history" className="text-sm text-blue-600 hover:underline flex items-center">
-                        View Import History →
+                    <a href="/manager/import/history" className="text-sm text-blue-600 hover:underline flex items-center px-2">
+                        View History →
                     </a>
                 </div>
             </div>
@@ -294,7 +351,7 @@ export default function ImportPage() {
                     )}
                 </div>
 
-                {loading && <p className="text-sm text-blue-600 animate-pulse">Processing...</p>}
+                {loading && <p className="text-sm text-blue-600 animate-pulse font-medium">Processing... Please wait...</p>}
 
                 {summary && (
                     <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100">
@@ -342,7 +399,7 @@ export default function ImportPage() {
                                 disabled={loading} 
                                 className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
                             >
-                                Confirm & Import All
+                                {loading ? 'Importing...' : 'Confirm & Import All'}
                             </Button>
 
                              {rowResults.some(r => !r.success) && (
