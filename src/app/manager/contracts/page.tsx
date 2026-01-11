@@ -164,7 +164,6 @@ function ContractsListContent() {
         if (visitError) console.error('Error deleting visits:', visitError);
 
         // Payments (table: payments, column: amc_contract_id)
-        // note: previously incorrectly 'amc_payments'
         const { error: paymentError } = await supabase
             .from('payments')
             .delete()
@@ -230,7 +229,16 @@ function ContractsListContent() {
                 onConfirm={executeDelete}
                 isDeleting={isDeleting}
                 title={deleteTargetIds.length > 1 ? `Delete ${deleteTargetIds.length} Contracts?` : `Delete Contract?`}
-                message={`Are you sure you want to delete ${deleteTargetIds.length > 1 ? 'these contracts' : 'this contract'}? This record will be permanently removed and cannot be recovered.`}
+                message={(() => {
+                    if (deleteTargetIds.length === 1) {
+                         const target = contracts.find(c => c.id === deleteTargetIds[0]);
+                         if (target) {
+                             // --- MODIFIED HERE TO SHOW NAME AND LICENSE ---
+                             return `Are you sure you want to delete the contract for "${target.customer_name}" (License/GRA: ${target.gov_license_no || target.gra_no || 'N/A'})? This record will be permanently removed.`;
+                         }
+                    }
+                    return `Are you sure you want to delete ${deleteTargetIds.length > 1 ? 'these contracts' : 'this contract'}? This record will be permanently removed and cannot be recovered.`;
+                })()}
             />
 
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
