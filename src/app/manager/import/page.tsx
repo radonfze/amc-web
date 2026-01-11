@@ -187,7 +187,13 @@ export default function ImportPage() {
     }
 
     async function handleImport(isDryRun: boolean) {
-        if (!rows.length) return;
+        if (!rows.length) {
+            alert("No rows to import.");
+            return;
+        }
+
+        if(!isDryRun && !confirm("Double check: You are about to Import into LIVE DATABASE. Proceed?")) return;
+
         setLoading(true);
         setRowResults([]);
 
@@ -260,9 +266,6 @@ export default function ImportPage() {
         setRows(updated);
     }
 
-    // No need for separate handler if inlining, but keeping clean logic
-    // Using variant="danger" instead of destructive
-
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow-sm gap-4">
@@ -273,6 +276,7 @@ export default function ImportPage() {
                 <div className="flex flex-wrap gap-3">
                      <Button 
                         variant="danger"
+                        type="button"
                         onClick={async () => {
                             if (confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas. This action cannot be undone. Are you sure?')) {
                                 setLoading(true);
@@ -367,6 +371,7 @@ export default function ImportPage() {
                         <div className="flex flex-wrap gap-4 mt-2">
                              {/* Simulation Button */}
                             <Button 
+                                type="button"
                                 onClick={() => handleImport(true)} 
                                 disabled={loading} 
                                 variant="outline"
@@ -377,10 +382,9 @@ export default function ImportPage() {
 
                             {/* Actual Import Button */}
                             <Button 
+                                type="button"
                                 onClick={() => {
-                                    if(confirm("Are you sure you want to import ALL valid rows? This will update the database.")) {
-                                        handleImport(false);
-                                    }
+                                    handleImport(false);
                                 }} 
                                 disabled={loading} 
                                 className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
