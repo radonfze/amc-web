@@ -220,10 +220,13 @@ function ContractsListContent() {
         if (filteredContracts.length === 0) return; 
 
         // Generate CSV content
-        const headers = ['ID', 'Customer', 'Location', 'Status', 'Start Date', 'End Date', 'Next Due', 'Cycle Status'].join(',');
+        const headers = ['ID', 'Customer', 'Contact No', 'License No', 'GRA No', 'Location', 'Status', 'Start Date', 'End Date', 'Next Due', 'Cycle Status'].join(',');
         const rows = filteredContracts.map(c => [
             c.id,
-            `"${c.customer_name}"`, 
+            `"${c.customer_name}"`,
+            `"${c.contact_number || ''}"`,
+            `"${c.gov_license_no || ''}"`,
+            `"${c.gra_no || ''}"`,
             `"${c.location_name || ''}"`,
             c.status,
             c.start_date,
