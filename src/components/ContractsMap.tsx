@@ -160,6 +160,32 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
         }
     }, [selectedArea, contracts]);
 
+    // Calculate status counts based on current area filter
+    const counts = useMemo(() => {
+        const acc = { green: 0, yellow: 0, red: 0, expired: 0 };
+        contracts.forEach(c => {
+            if (!c.lat || !c.lng) return; // Skip invalid coords
+            if (selectedArea !== 'All' && c.customer_area !== selectedArea) return; // Skip if not in area
+
+            let daysSinceLast = 0;
+            if (c.last_effective_visit_date) {
+                try {
+                    const last = new Date(c.last_effective_visit_date);
+                    const now = new Date();
+                    daysSinceLast = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+                } catch (e) {}
+            }
+
+            const isExpired = c.status === 'expired' || (c.end_date && new Date(c.end_date) < new Date());
+
+            if (isExpired) acc.expired++;
+            else if (daysSinceLast > 90) acc.red++;
+            else if (daysSinceLast > 80) acc.yellow++;
+            else acc.green++;
+        });
+        return acc;
+    }, [contracts, selectedArea]);
+
     return (
         <div className="h-full w-full rounded-lg overflow-hidden border border-gray-200 shadow-sm z-0 relative flex flex-col">
             
@@ -222,7 +248,7 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                             value={selectedArea}
                             onChange={(e) => setSelectedArea(e.target.value)}
                         >
-                            <option value="All">All Locations</option>
+                            <option value="All">All Locations ({contracts.length})</option>
                             {uniqueAreas.map(area => (
                                 <option key={area} value={area}>{area}</option>
                             ))}
@@ -233,19 +259,19 @@ export default function ContractsMap({ contracts }: { contracts: any[] }) {
                     <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-xs">
                          <label className="flex items-center gap-1.5 cursor-pointer">
                             <input type="checkbox" checked={statusFilters.green} onChange={e => setStatusFilters(prev => ({...prev, green: e.target.checked}))} className="rounded text-green-500 focus:ring-green-500"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"/> Active</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"/> Active <b>({counts.green})</b></span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
                             <input type="checkbox" checked={statusFilters.yellow} onChange={e => setStatusFilters(prev => ({...prev, yellow: e.target.checked}))} className="rounded text-yellow-500 focus:ring-yellow-500"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"/> Risk (80+)</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"/> Risk <b>({counts.yellow})</b></span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
                             <input type="checkbox" checked={statusFilters.red} onChange={e => setStatusFilters(prev => ({...prev, red: e.target.checked}))} className="rounded text-red-600 focus:ring-red-600"/>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"/> Critical (90+)</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"/> Critical <b>({counts.red})</b></span>
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
                             <input type="checkbox" checked={statusFilters.expired} onChange={e => setStatusFilters(prev => ({...prev, expired: e.target.checked}))} className="rounded text-red-800 focus:ring-red-800"/>
-                            <span className="flex items-center gap-1 font-bold text-red-600">X Expired</span>
+                            <span className="flex items-center gap-1 text-red-600">X Expired <b>({counts.expired})</b></span>
                         </label>
                     </div>
                 </div>
