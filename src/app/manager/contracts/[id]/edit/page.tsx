@@ -256,13 +256,30 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
 
 
     function handleGPS() {
-        if (!navigator.geolocation) return alert('GPS not supported');
+        if (!navigator.geolocation) {
+             alert('GPS not supported on this browser');
+             return;
+        }
+
+        const options = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        };
+
         navigator.geolocation.getCurrentPosition((pos) => {
             const lat = pos.coords.latitude.toFixed(6);
             const lng = pos.coords.longitude.toFixed(6);
             const dist = haversine(Number(lat), Number(lng), OFFICE_LAT, OFFICE_LNG).toFixed(3);
             setForm((prev) => ({ ...prev, latitude: lat, longitude: lng, distance: dist }));
-        }, (err) => alert("GPS Error: " + err.message));
+        }, (err) => {
+            console.error(err);
+            let msg = "GPS Error: " + err.message;
+            if (err.code === 1) msg = "Location Access Denied. Please enable Location Services.";
+            else if (err.code === 2) msg = "Location Unavailable.";
+            else if (err.code === 3) msg = "Location request timed out.";
+            alert(msg);
+        }, options);
     }
 
     async function handleSubmit(e: React.FormEvent) {

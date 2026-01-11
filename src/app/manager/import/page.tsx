@@ -79,11 +79,11 @@ export default function ImportPage() {
     function parseCoordinate(val: string): number {
         if (!val) return 0;
         
-        // Remove spaces
-        let clean = val.trim();
+        // Remove known text garbage but keep separators
+        let clean = val.trim().replace(/[°'"NSEW]/g, ' ').replace(/\s+/g, ' ').trim();
         
-        // 1. Check for DMS like "25-01-00" or "25-01-00.00"
-        // Regex for DD-MM-SS with hyphens or spaces
+        // 1. Check for DMS like "25 01 00" or "25-01-00"
+        // Regex allows space, hyphen, colon as separators
         const dmsRegex = /^(\d{1,3})[-: ](\d{1,2})[-: ](\d{1,2}(?:\.\d+)?)$/; 
         const match = clean.match(dmsRegex);
         
@@ -94,8 +94,10 @@ export default function ImportPage() {
             return deg + (min / 60) + (sec / 3600);
         }
         
-        // 2. Normal Float (handles 25.123 and 25)
-        return parseFloat(clean);
+        // 2. Normal Float (handles 25.123)
+        // Check if it really looks like a number
+        const floatVal = parseFloat(clean);
+        return isNaN(floatVal) ? 0 : floatVal;
     }
 
     async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
