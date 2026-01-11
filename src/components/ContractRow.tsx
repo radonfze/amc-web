@@ -27,8 +27,8 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
     };
 
     const handleDeleteClick = (e: MouseEvent) => {
-        e.preventDefault(); 
-        e.stopPropagation();
+        // e.preventDefault(); // allow default button behavior
+        e.stopPropagation(); // Stop bubble to Link (though logic separates them now, good safety)
         if (onDelete && confirm(`Are you sure you want to delete contract for ${contract.customer_name}?`)) {
             onDelete(contract.id);
         }
@@ -75,7 +75,7 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
                 </Link>
 
                 {/* Right Side: Badges & Actions */}
-                <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+                <div className="flex items-center gap-2 self-start md:self-center shrink-0 relative">
                     
                      {/* Badges - Wrapped in Link to keep them clickable if desired, or just static. Let's make them navigate. */}
                      <Link href={`/manager/contracts/${contract.id}`} className="flex items-center gap-2">
@@ -100,8 +100,9 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
                     {/* Single Delete Button - OUTSIDE Link */}
                     {onDelete && (
                         <button
+                            type="button"
                             onClick={handleDeleteClick}
-                            className="ml-2 text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition border border-transparent hover:border-red-100"
+                            className="ml-2 text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition border border-transparent hover:border-red-100 relative z-50 cursor-pointer pointer-events-auto"
                             title="Delete Contract"
                         >
                             <TrashIcon className="w-5 h-5" />
