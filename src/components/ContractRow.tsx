@@ -27,7 +27,7 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
     };
 
     const handleDeleteClick = (e: MouseEvent) => {
-        e.preventDefault(); // Prevent Link navigation
+        e.preventDefault(); 
         e.stopPropagation();
         if (onDelete && confirm(`Are you sure you want to delete contract for ${contract.customer_name}?`)) {
             onDelete(contract.id);
@@ -49,9 +49,12 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
                 </div>
             )}
 
-            <Link href={`/manager/contracts/${contract.id}`} className="block flex-1">
-                <div className={`bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isSelected ? 'border-blue-400 ring-1 ring-blue-100' : 'border-gray-100'}`}>
-                    <div className="flex-1">
+            {/* Card Container - Flex wrapper to separate Clickable Content & Actions */}
+            <div className={`flex-1 bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isSelected ? 'border-blue-400 ring-1 ring-blue-100' : 'border-gray-100'}`}>
+                
+                {/* Clickable Main Content Area */}
+                <Link href={`/manager/contracts/${contract.id}`} className="flex-1 w-full md:w-auto hover:bg-gray-50/50 rounded -ml-2 p-2 transition">
+                    <div>
                         <div className="font-semibold text-gray-900 text-sm md:text-base">
                             {contract.customer_name} <span className="text-gray-400 font-normal mx-1">/</span> {contract.location_name}
                         </div>
@@ -69,8 +72,13 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
                              <span>Days since last AMC: <span className="font-medium text-blue-600">{daysSinceLast}</span></span>
                         </div>
                     </div>
+                </Link>
 
-                    <div className="flex items-center gap-2 self-start md:self-center">
+                {/* Right Side: Badges & Actions */}
+                <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+                    
+                     {/* Badges - Wrapped in Link to keep them clickable if desired, or just static. Let's make them navigate. */}
+                     <Link href={`/manager/contracts/${contract.id}`} className="flex items-center gap-2">
                         <span
                             className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
                                 contract.status === 'active' ? 'bg-green-100 text-green-800' :
@@ -87,20 +95,20 @@ export default function ContractRow({ contract, isSelected, onToggle, onDelete }
                         >
                             {contract.cycle_status}
                         </span>
+                    </Link>
 
-                        {/* Single Delete Button */}
-                        {onDelete && (
-                            <button
-                                onClick={handleDeleteClick}
-                                className="ml-2 text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition"
-                                title="Delete Contract"
-                            >
-                                <TrashIcon className="w-5 h-5" />
-                            </button>
-                        )}
-                    </div>
+                    {/* Single Delete Button - OUTSIDE Link */}
+                    {onDelete && (
+                        <button
+                            onClick={handleDeleteClick}
+                            className="ml-2 text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition border border-transparent hover:border-red-100"
+                            title="Delete Contract"
+                        >
+                            <TrashIcon className="w-5 h-5" />
+                        </button>
+                    )}
                 </div>
-            </Link>
+            </div>
         </div>
     );
 }
