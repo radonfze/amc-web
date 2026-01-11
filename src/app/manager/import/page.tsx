@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { CloudArrowDownIcon, ArrowUpTrayIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { CloudArrowDownIcon, ArrowUpTrayIcon, TrashIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 // We map the incoming CSV to a standard internal structure
 type Row = {
@@ -33,6 +33,10 @@ type ClassifiedRow = Row & {
     matchedCustomerId?: number;
     coordStatus?: 'ok' | 'swapped' | 'invalid' | 'parsed_dms';
     coordMessage?: string; // Reason for invalidity
+    
+    // Duplicate Detection
+    duplicateStatus?: 'ok' | 'warning' | 'error';
+    duplicateMessage?: string;
 };
 
 export default function ImportPage() {
@@ -41,6 +45,7 @@ export default function ImportPage() {
     const [loading, setLoading] = useState(false);
     const [skipInvalid, setSkipInvalid] = useState(true);
     const [rowResults, setRowResults] = useState<any[]>([]);
+    const [existingCustomers, setExistingCustomers] = useState<any[]>([]);
     
     // Progress State
     const [progress, setProgress] = useState(0);
@@ -48,10 +53,10 @@ export default function ImportPage() {
 
     // User's exact requested headers
     const TEMPLATE_HEADERS = [
-        "NAME",
+        "NAME *",
         "LOCATION",
-        "GRA No.",
-        "LICENSE NO:", 
+        "GRA No. *",
+        "LICENSE NO: *", 
         "CONTACT NO",
         "LATT",
         "LONGI",
@@ -70,12 +75,70 @@ export default function ImportPage() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "amc_import_template_v2.csv");
+        link.setAttribute("download", "amc_import_template_v3_mandatory.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
     
+    async function fetchExistingCustomers() {
+        const { data, error } = await supabase.from('customers').select('id, name, license_number, gra_number');
+        if (!error && data) {
+            setExistingCustomers(data);
+            return data;
+        }
+        return [];
+    }
+
+    // Validate duplicates vs DB and vs CSV itself
+    function validateDuplicates(currentRows: ClassifiedRow[], dbCustomers: any[]) {
+        return currentRows.map(row => {
+            const issues: string[] = [];
+            let status: 'ok' | 'warning' | 'error' = 'ok';
+
+            const cleanLic = row.license_no?.trim();
+            const cleanGra = row.gra_no?.trim();
+            const cleanName = row.NAME?.trim();
+
+            if (!cleanLic && !cleanGra) return { ...row, duplicateStatus: 'ok', duplicateMessage: '' } as ClassifiedRow;
+
+            // 1. Local CSV Check
+            const localDupLic = cleanLic && currentRows.some(r => r !== row && r.license_no?.trim() === cleanLic && r.NAME?.trim() !== cleanName);
+            const localDupGra = cleanGra && currentRows.some(r => r !== row && r.gra_no?.trim() === cleanGra && r.NAME?.trim() !== cleanName);
+
+            if (localDupLic) issues.push(`Duplicate License in CSV (Different Name)`);
+            if (localDupGra) issues.push(`Duplicate GRA in CSV (Different Name)`);
+
+            // 2. DB Check
+            if (cleanLic) {
+                const dbMatch = dbCustomers.find(c => c.license_number === cleanLic && c.name?.toLowerCase().trim() !== cleanName?.toLowerCase().trim());
+                if (dbMatch) issues.push(`License belongs to: ${dbMatch.name}`);
+            }
+            if (cleanGra) {
+                const dbMatch = dbCustomers.find(c => c.gra_number === cleanGra && c.name?.toLowerCase().trim() !== cleanName?.toLowerCase().trim());
+                if (dbMatch) issues.push(`GRA belongs to: ${dbMatch.name}`);
+            }
+
+            if (issues.length > 0) {
+                status = 'warning';
+            }
+
+            return {
+                ...row,
+                duplicateStatus: status,
+                duplicateMessage: issues.join(' | ')
+            } as ClassifiedRow;
+        });
+    }
+
+    function handleCellChange(index: number, field: keyof ClassifiedRow, value: string) {
+        setRows(prev => {
+            const next = [...prev];
+            next[index] = { ...next[index], [field]: value };
+            return validateDuplicates(next, existingCustomers);
+        });
+    }
+
     // --- ROBUST COORDINATE PARSER ---
     function parseCoordinate(val: string): number {
         if (!val) return 0;
@@ -106,6 +169,10 @@ export default function ImportPage() {
         if (!file) return;
 
         setLoading(true);
+        setImportStatus('Parsing file & Fetching DB...');
+        
+        // 1. Fetch DB Customers for Validation
+        const dbCustomers = await fetchExistingCustomers();
 
         Papa.parse(file, {
             header: true,
@@ -113,12 +180,10 @@ export default function ImportPage() {
             complete: async (results) => {
                 const rawRows = results.data as Record<string, string>[];
                 
-                // Fetch Master Data
-                const { data: customers } = await supabase
-                    .from('customers')
-                    .select('id, gov_license_no, gra_no');
+                // Filter empty
+                const validRawRows = rawRows.filter(r => Object.values(r).some(v => v));
 
-                const classified: ClassifiedRow[] = rawRows.map((r) => {
+                let classified: ClassifiedRow[] = validRawRows.map((r) => {
                     // 1. Normalize Headers (Fuzzy Match)
                     const getVal = (candidates: string[]) => {
                         for (const key of Object.keys(r)) {
@@ -134,8 +199,8 @@ export default function ImportPage() {
 
                     const name = getVal(['NAME', 'CUSTOMER NAME']);
                     const location = getVal(['LOCATION', 'AREA']);
-                    const gra = getVal(['GRA No', 'GRA No.', 'GRA', 'GRA NO']);
-                    const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.', 'LIC NO', 'LICENSE']);
+                    const gra = getVal(['GRA No', 'GRA No.', 'GRA', 'GRA NO', 'GRA Number']);
+                    const license = getVal(['LICENSE NO', 'LICENSE NO:', 'LICENSE NO.', 'LIC NO', 'LICENSE', 'License Number']);
                     const contact = getVal(['CONTACT NO', 'CONTACT NO.', 'CONTACT', 'PHONE']);
                     
                     // Capture RAW values for debugging
@@ -144,15 +209,18 @@ export default function ImportPage() {
                     
                     const renewal = getVal(['RENEWAL DATE', 'RENEWAL DATE:', 'RENEWAL']);
                     const amcDate = getVal(['AMC Date', 'AMC Date:', 'AMC START']);
+                    const lastChecked = getVal(['Last Checked Date', 'Last Checked']);
+                    const nextDue = getVal(['Next AMC Due Date', 'Next Due']);
+                    const statusVal = getVal(['Status']);
+                    const distVal = getVal(['Distance']);
                     
-                    // Initial Parse attempt (will be refined in fixAll)
-                    // We store raw first
-                    
-                    // Match Logic
-                    const match = customers?.find(
-                        (c) =>
-                            (c.gov_license_no && c.gov_license_no === license && license !== '') ||
-                            (c.gra_no && c.gra_no === gra && gra !== '')
+                    // Match Logic (Checking if IT IS Existing Customer based on GRA/LIC)
+                    // Note: This logic assumes if found -> Existing. 
+                    // Duplicate logic runs separate to warn if Name mismatch.
+                    const match = dbCustomers?.find(
+                        (c:any) =>
+                            (c.license_number && c.license_number === license && license !== '') ||
+                            (c.gra_number && c.gra_number === gra && gra !== '')
                     );
 
                     let customerType: ClassifiedRow['customerType'] = 'new';
@@ -160,13 +228,21 @@ export default function ImportPage() {
 
                     if (match) {
                         customerType = 'existing';
-                        // Simple check: if date exists -> renewed, otherwise -> not_renewed
                         if (amcDate && amcDate.length > 5) {
                             renewalStatus = 'renewed';
                         } else {
                             renewalStatus = 'not_renewed';
                         }
+                        // Check if Name mismatches drastically? handled by duplicates check
                     }
+
+                    // Coord Validation initial
+                    const pLat = parseCoordinate(rawLat);
+                    const pLng = parseCoordinate(rawLng);
+                    let cStatus: any = 'ok';
+                    let cMsg = '';
+                    if (pLat === 0 && pLng === 0) { cStatus = 'invalid'; cMsg = 'Missing Lat/Lng'; }
+                    else if (pLng > 57 || pLng < 51 || pLat > 27 || pLat < 22) { cStatus = 'invalid'; cMsg = 'Out of UAE Bounds'; }
 
                     return {
                         NAME: name,
@@ -174,8 +250,8 @@ export default function ImportPage() {
                         gra_no: gra,
                         license_no: license,
                         contact_no: contact,
-                        lat: rawLat, // Start with Raw
-                        lng: rawLng, // Start with Raw
+                        lat: pLat.toString(),
+                        lng: pLng.toString(),
                         rawLat,
                         rawLng,
                         renewal_date: renewal,
@@ -183,8 +259,27 @@ export default function ImportPage() {
                         customerType,
                         renewalStatus,
                         matchedCustomerId: match?.id,
-                        
-                        // API MAPPING:
+                        lastCheckedISO: lastChecked,
+                        nextDueISO: nextDue,
+                        coordStatus: cStatus,
+                        coordMessage: cMsg
+                    };
+                });
+
+                // Apply Duplicate Validation
+                classified = validateDuplicates(classified, dbCustomers);
+                
+                setRows(classified);
+                setLoading(false);
+                setImportStatus(''); // Clear status
+                
+                // Update Summary
+                const invalid = classified.filter(r => r.coordStatus === 'invalid').length;
+                const warnings = classified.filter(r => r.duplicateStatus === 'warning').length;
+                setSummary({ total: classified.length, invalidCoords: invalid, duplicates: warnings });
+            }
+        });
+    }
                         'LICENSE NO.': license,
                         'GRA No.': gra,
                         'CONTACT NO.': contact,
@@ -215,6 +310,7 @@ export default function ImportPage() {
             (r) => r.renewalStatus === 'not_renewed'
         );
         const newCustomers = classified.filter((r) => r.customerType === 'new');
+        const duplicates = classified.filter(r => r.duplicateStatus === 'warning');
 
         return {
             total: classified.length,
@@ -222,81 +318,14 @@ export default function ImportPage() {
             renewed: renewed.length,
             notRenewed: notRenewed.length,
             newCustomers: newCustomers.length,
+            duplicates: duplicates.length
         };
-    }
-
-    async function handleImport(isDryRun: boolean) {
-        if (!rows.length) {
-            alert("No rows to import.");
-            return;
-        }
-
-        const msg = isDryRun 
-            ? "Run Simulation? This will not change data." 
-            : "⚠️ START LIVE IMPORT? \n\nThis will write to the database. \nMake sure you have reset the DB if this is a fresh import.";
-            
-        if(!confirm(msg)) return;
-
-        setLoading(true);
-        setProgress(0);
-        setRowResults([]);
-        setImportStatus('Starting...');
-
-        const BATCH_SIZE = 50; 
-        const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
-        let allResults: any[] = [];
-        
-        try {
-            for (let i = 0; i < totalBatches; i++) {
-                const start = i * BATCH_SIZE;
-                const end = Math.min(start + BATCH_SIZE, rows.length);
-                const batch = rows.slice(start, end);
-
-                setImportStatus(`Importing batch ${i + 1} of ${totalBatches} (Rows ${start + 1}-${end})...`);
-                
-                const res = await fetch('/api/import-amc', {
-                    method: 'POST',
-                    body: JSON.stringify({ rows: batch, dryRun: isDryRun, skipInvalid }),
-                    headers: { 'Content-Type': 'application/json' },
-                }).then((r) => r.json());
-
-                if (res.error) throw new Error(res.error);
-
-                 // Accommodate index offset for results
-                const batchResults = (res.rowResults || []).map((r: any) => ({
-                    ...r,
-                    index: r.index + start 
-                }));
-
-                allResults = [...allResults, ...batchResults];
-
-                // Update Progress
-                setProgress(Math.round(((i + 1) / totalBatches) * 100));
-            }
-    
-            setLoading(false);
-            setImportStatus(isDryRun ? 'Simulation Complete' : 'Import Complete');
-            
-            if (!isDryRun) {
-                alert(`Import Complete! Imported ${allResults.filter((r:any) => r.success).length} rows.`);
-                window.location.href = '/manager/contracts'; 
-            } else {
-                alert('Simulation Complete.');
-            }
-    
-            setRowResults(allResults);
-
-        } catch (error: any) {
-            setLoading(false);
-            console.error(error);
-            alert("Import Failed at batch " + importStatus + ": " + error.message);
-        }
     }
 
     // Renamed to analyze to be clear it runs automatically or manually
     function analyzeRows(currentRows: ClassifiedRow[] = rows) {
         
-        const updated = currentRows.map((r) => {
+        let updated = currentRows.map((r) => {
             const fixed: ClassifiedRow = { ...r };
             
             // Fix Name capitalization
@@ -342,9 +371,6 @@ export default function ImportPage() {
                     status = 'invalid';
                     message += `Lng ${lng.toFixed(4)} out of UAE range (50-60). `;
                 }
-                
-                // If we detected DMS (e.g. integer part was changed significantly during parse?)
-                // Actually parseCoordinate handles it silently.
             }
 
             fixed.lat = lat.toString();
@@ -357,6 +383,9 @@ export default function ImportPage() {
             return fixed;
         });
 
+        // Re-run Duplicate check (important if name/lic/gra changed during analysis or previous steps)
+        updated = validateDuplicates(updated, existingCustomers);
+
         setRows(updated);
         setSummary(buildSummary(updated));
     }
@@ -366,7 +395,7 @@ export default function ImportPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow-sm gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Import AMC Data (Improved)</h1>
-                    <p className="text-gray-500 text-sm">Supports DMS (25-01-00) and Decimal formats.</p>
+                    <p className="text-gray-500 text-sm">Supports DMS (25-01-00) and Decimal formats. Checks for duplicates.</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
                      <button 
@@ -438,11 +467,14 @@ export default function ImportPage() {
                 )}
 
                 {summary && !loading && (
-                    <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gray-50 p-4 rounded text-sm space-y-1 border border-gray-100 grid grid-cols-2 md:grid-cols-5 gap-4">
                         <div>Total: <span className="font-bold">{summary.total}</span></div>
                         <div className="text-green-700">Exist/Renew: {summary.renewed}</div>
                         <div className="text-red-700">Not Renewed: {summary.notRenewed}</div>
                         <div className="text-blue-700">New: {summary.newCustomers}</div>
+                        <div className="text-orange-600 font-bold flex items-center gap-1">
+                            <ExclamationTriangleIcon className="w-4 h-4" /> Duplicates: {summary.duplicates}
+                        </div>
                     </div>
                 )}
 
@@ -473,39 +505,67 @@ export default function ImportPage() {
 
             {rows.length > 0 && rowResults.length === 0 && (
                 <Card>
-                    <h2 className="font-semibold text-gray-800 mb-4">Preview (First 50 rows)</h2>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="font-semibold text-gray-800">Preview (First 50 rows)</h2>
+                        <span className="text-xs text-gray-500">Edit fields directly to fix issues</span>
+                    </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-xs text-left border-collapse">
                             <thead className="bg-gray-100 text-gray-700 uppercase font-medium">
                                 <tr>
                                     <th className="px-2 py-2 border">Name</th>
-                                    <th className="px-2 py-2 border">Raw Latt</th>
-                                    <th className="px-2 py-2 border">Raw Longi</th>
+                                    <th className="px-2 py-2 border">License No</th>
+                                    <th className="px-2 py-2 border">GRA No</th>
+                                    <th className="px-2 py-2 border">Raw Coords</th>
                                     <th className="px-2 py-2 border">Parsed Coords (Lat, Lng)</th>
                                     <th className="px-2 py-2 border">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {rows.slice(0, 50).map((r, i) => (
-                                    <tr key={i} className={`hover:bg-gray-50 ${r.coordStatus === 'invalid' ? 'bg-red-50' : ''}`}>
+                                    <tr key={i} className={`hover:bg-gray-50 ${r.coordStatus === 'invalid' || r.duplicateStatus === 'warning' ? 'bg-red-50' : ''}`}>
                                         <td className="px-2 py-2 border max-w-[150px] truncate" title={r.NAME}>{r.NAME}</td>
                                         
+                                        {/* Editable License */}
+                                        <td className="px-2 py-2 border p-0">
+                                            <input 
+                                                value={r.license_no} 
+                                                onChange={(e) => handleCellChange(i, 'license_no', e.target.value)}
+                                                className={`w-full px-2 py-1 bg-transparent focus:bg-white focus:outline-none ${r.duplicateStatus === 'warning' && r.duplicateMessage?.includes('License') ? 'text-red-600 font-bold border-red-300 bg-red-50' : ''}`}
+                                            />
+                                        </td>
+
+                                        {/* Editable GRA */}
+                                        <td className="px-2 py-2 border p-0">
+                                            <input 
+                                                value={r.gra_no} 
+                                                onChange={(e) => handleCellChange(i, 'gra_no', e.target.value)}
+                                                className={`w-full px-2 py-1 bg-transparent focus:bg-white focus:outline-none ${r.duplicateStatus === 'warning' && r.duplicateMessage?.includes('GRA') ? 'text-red-600 font-bold border-red-300 bg-red-50' : ''}`}
+                                            />
+                                        </td>
+
                                         {/* DEBUG COLUMNS */}
-                                        <td className="px-2 py-2 border font-mono text-gray-600">{r.rawLat}</td>
-                                        <td className="px-2 py-2 border font-mono text-gray-600">{r.rawLng}</td>
+                                        <td className="px-2 py-2 border font-mono text-gray-600 text-[10px]">{r.rawLat}, {r.rawLng}</td>
                                         
                                         <td className="px-2 py-2 border font-mono font-bold">
                                             {parseFloat(r.lat).toFixed(5)}, {parseFloat(r.lng).toFixed(5)}
                                         </td>
                                         <td className="px-2 py-2 border">
-                                            {r.coordStatus === 'swapped' && <span className="text-orange-600 font-bold">Swapped</span>}
-                                            {r.coordStatus === 'invalid' && (
-                                                <div className="flex flex-col">
-                                                    <span className="text-red-600 font-bold">INVALID</span>
-                                                    <span className="text-[9px] text-red-500">{r.coordMessage}</span>
-                                                </div>
-                                            )}
-                                            {r.coordStatus === 'ok' && <span className="text-green-600">OK</span>}
+                                            <div className="flex flex-col gap-1">
+                                                {r.coordStatus === 'swapped' && <span className="text-orange-600 font-bold">Swapped</span>}
+                                                {r.coordStatus === 'invalid' && (
+                                                    <span className="text-red-600 font-bold text-[10px]">{r.coordMessage}</span>
+                                                )}
+                                                
+                                                {r.duplicateStatus === 'warning' && (
+                                                    <span className="text-orange-700 font-bold flex items-center gap-1 text-[10px]">
+                                                        <ExclamationTriangleIcon className="w-3 h-3" />
+                                                        {r.duplicateMessage}
+                                                    </span>
+                                                )}
+
+                                                {r.coordStatus === 'ok' && r.duplicateStatus !== 'warning' && <span className="text-green-600">OK</span>}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -531,7 +591,7 @@ export default function ImportPage() {
                             <tbody>
                                 {rowResults.map((r, i) => (
                                     <tr key={i} className={r.success ? 'bg-green-50' : 'bg-red-50'}>
-                                        <td className="px-4 py-2 border">{r.index + 2}</td>
+                                        <td className="px-4 py-2 border">{r.index + 1}</td>
                                         <td className="px-4 py-2 border font-bold">
                                             {r.success ? <span className="text-green-600">SUCCESS</span> : <span className="text-red-600">FAILED</span>}
                                         </td>

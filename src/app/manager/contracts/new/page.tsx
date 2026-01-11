@@ -59,36 +59,43 @@ export default function NewContractPage() {
 
     const [daysFromExpiry, setDaysFromExpiry] = useState<number | null>(null);
 
-    // Auto-calculate Renewal Date and Next Due Date whenever AMC Date or Duration changes
+    // Auto-calculate Renewal Date
     useEffect(() => {
-        if (form.amcDate) {
+        if (form.amcDate && duration) {
             const start = new Date(form.amcDate);
             if (!isNaN(start.getTime())) {
-                // Renewal Date
-                if (duration) {
-                    const end = new Date(start);
-                    end.setMonth(start.getMonth() + duration);
-                    end.setDate(end.getDate() - 1);
-                    const renewalStr = end.toISOString().split('T')[0];
-                    setForm(prev => ({ ...prev, renewalDate: renewalStr }));
-                }
-
-                // Next Due Date (Default +90 days) - Only if not already set or assume auto-calc
-                // Note: We'll overwrite it for now if it's empty.
-                const due = new Date(start);
-                due.setDate(due.getDate() + 90);
-                const dueStr = due.toISOString().split('T')[0];
-                
-                // Last Checked = AMC Date (Default)
-                
-                setForm(prev => ({ 
-                    ...prev, 
-                    nextDueDate: prev.nextDueDate ? prev.nextDueDate : dueStr,
-                    lastCheckedDate: prev.lastCheckedDate ? prev.lastCheckedDate : form.amcDate
-                }));
+                const end = new Date(start);
+                end.setMonth(start.getMonth() + duration);
+                end.setDate(end.getDate() - 1);
+                const renewalStr = end.toISOString().split('T')[0];
+                setForm(prev => ({ ...prev, renewalDate: renewalStr }));
             }
         }
     }, [form.amcDate, duration]);
+
+    // Auto-calculate Next Due Date based on Last Checked Date
+    useEffect(() => {
+        if (form.lastCheckedDate) {
+            const checked = new Date(form.lastCheckedDate);
+            if (!isNaN(checked.getTime())) {
+                checked.setDate(checked.getDate() + 90);
+                const dueStr = checked.toISOString().split('T')[0];
+                setForm(prev => ({ ...prev, nextDueDate: dueStr }));
+            }
+        } else if (form.amcDate && !form.nextDueDate) {
+             // Fallback: If no last checked, use AMC Date + 90
+            const start = new Date(form.amcDate);
+            if (!isNaN(start.getTime())) {
+                const due = new Date(start);
+                due.setDate(due.getDate() + 90);
+                setForm(prev => ({ 
+                    ...prev, 
+                    nextDueDate: due.toISOString().split('T')[0],
+                    lastCheckedDate: form.amcDate
+                }));
+            }
+        }
+    }, [form.lastCheckedDate, form.amcDate]);
 
     // Auto-calculate Fine when AMC Date or Renewed Date changes
     useEffect(() => {
@@ -103,11 +110,6 @@ export default function NewContractPage() {
 
                 let fine = 0;
                 if (diffDays > 30) {
-                    // Logic: Grace period 30 days. After that, charge for every month late?
-                    // "after 30 days everymonth 160/200 each month"
-                    // Assuming if days <= 30, fine 0.
-                    // If days 31-60? 1 month fine? 
-                    // Let's use: months = ceil((days - 30) / 30)
                     const lateDays = diffDays - 30;
                     const monthsLate = Math.ceil(lateDays / 30);
                     fine = monthsLate * fineRate;
@@ -133,11 +135,7 @@ export default function NewContractPage() {
             setDaysFromExpiry(null);
             setForm(prev => ({ ...prev, fineAmount: '0.00' }));
         }
-    }, [form.amcDate, form.renewedDate, fineRate]); // Depend on fineRate too
-
-    const handleFineRateToggle = () => {
-        setFineRate(prev => (prev === 200 ? 160 : 200));
-    };
+    }, [form.amcDate, form.renewedDate, fineRate]);
 
     // Search Logic
     const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -388,10 +386,13 @@ export default function NewContractPage() {
                          <div className="flex justify-between items-center mb-1">
                             <label className="text-xs text-yellow-700 font-semibold">Fine Calculation</label>
                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-500">Rate:</span>
-                                <button type="button" onClick={handleFineRateToggle} className="text-[10px] px-2 py-0.5 bg-white border rounded shadow-sm">
-                                    {fineRate}/month
-                                </button>
+                                <span className="text-[10px] text-gray-500">Rate/Month:</span>
+                                <input 
+                                    type="number" 
+                                    value={fineRate} 
+                                    onChange={(e) => setFineRate(Number(e.target.value))}
+                                    className="w-16 h-6 text-[10px] px-1 border rounded text-center shadow-sm"
+                                />
                              </div>
                          </div>
                          <div className="flex gap-2">
@@ -451,6 +452,7 @@ export default function NewContractPage() {
                         <option value="expired">Expired</option>
                         <option value="renewed">Renewed</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="custom">Custom</option>
                     </select>
                 </div>
 

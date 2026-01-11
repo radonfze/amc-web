@@ -123,16 +123,39 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
     }, [resolvedParams.id, router]);
 
 
-    // Auto-calculate Renewal Date - ONLY if user actively changing duration/date, otherwise manual
-    // Logic: disable this effect initially? Or checks??
-    // Let's rely on user manually fixing dates if needed, OR only if they interact with the Duration dropdown
-    // BUT the form logic in `new` binds inputs.
-    // We should probably remove the "Auto-calculate" effect that runs on mount because it might overwrite existing DB data.
-    // Instead, we create a specialized handler or keep effect but only if `amcDate` changed from initial load.
-    // For simplicity, I'll keep the logic but maybe user needs to be careful.
-    // Actually, `form.amcDate` is set from DB on mount. If I have `useEffect([form.amcDate, duration])`, it will fire immediately and might change `renewalDate` if duration defaults to 12.
-    // I should prevent initial overwrite.
-    
+    // Auto-calculate Renewal Date
+    useEffect(() => {
+        if (!loading && form.amcDate && duration) {
+            const start = new Date(form.amcDate);
+            if (!isNaN(start.getTime())) {
+                const end = new Date(start);
+                end.setMonth(start.getMonth() + duration);
+                end.setDate(end.getDate() - 1);
+                const renewalStr = end.toISOString().split('T')[0];
+                
+                // Only set if different to avoid cycle/overwrite
+                if (renewalStr !== form.renewalDate) {
+                    setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+                }
+            }
+        }
+    }, [form.amcDate, duration, loading]);
+
+    // Auto-calculate Next Due Date based on Last Checked Date
+    useEffect(() => {
+        if (!loading && form.lastCheckedDate) {
+             const checked = new Date(form.lastCheckedDate);
+             if (!isNaN(checked.getTime())) {
+                 checked.setDate(checked.getDate() + 90);
+                 const dueStr = checked.toISOString().split('T')[0];
+                 
+                 if (dueStr !== form.nextDueDate) {
+                      setForm(prev => ({ ...prev, nextDueDate: dueStr }));
+                 }
+             }
+        }
+    }, [form.lastCheckedDate, loading]);
+
     // Auto-calculate Fine
     useEffect(() => {
         if (!loading && form.amcDate && form.renewedDate) {
@@ -144,17 +167,36 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                 const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
                 setDaysFromExpiry(diffDays);
 
-                // Recalc fine only if user changes inputs?
-                // For Edit, maybe fine amount is already saved. We might not want to re-calc unless asked.
-                // But fineAmount is loaded from DB.
-                // Let's just update daysFromExpiry for display.
-            }
-        }
-    }, [form.amcDate, form.renewedDate, loading]);
+                let fine = 0;
+                if (diffDays > 30) {
+                    const lateDays = diffDays - 30;
+                    const monthsLate = Math.ceil(lateDays / 30);
+                    fine = monthsLate * fineRate;
+                }
+                
+                // Recalculate totals
+                 setForm(prev => {
+                     const newFine = fine.toFixed(2);
+                     if (prev.fineAmount === newFine) return prev; 
 
-    const handleFineRateToggle = () => {
-        setFineRate(prev => (prev === 200 ? 160 : 200));
-    };
+                    const g = parseFloat(prev.govtFees) || 0;
+                    const a = parseFloat(prev.amcValue) || 0;
+                    const total = g + a + fine;
+                    const paid = parseFloat(prev.paidAmount) || 0;
+                    
+                    return {
+                        ...prev,
+                        fineAmount: newFine,
+                        amount: total.toFixed(2),
+                        balanceAmount: (total - paid).toFixed(2)
+                    };
+                });
+            }
+        } else if (!loading) {
+            setDaysFromExpiry(null);
+        }
+    }, [form.amcDate, form.renewedDate, fineRate, loading]);
+
 
     const handleNameChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -450,10 +492,13 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                          <div className="flex justify-between items-center mb-1">
                             <label className="text-xs text-yellow-700 font-semibold">Fine Calculation</label>
                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-gray-500">Rate:</span>
-                                <button type="button" onClick={handleFineRateToggle} className="text-[10px] px-2 py-0.5 bg-white border rounded shadow-sm">
-                                    {fineRate}/month
-                                </button>
+                                <span className="text-[10px] text-gray-500">Rate/Month:</span>
+                                <input 
+                                    type="number" 
+                                    value={fineRate} 
+                                    onChange={(e) => setFineRate(Number(e.target.value))}
+                                    className="w-16 h-6 text-[10px] px-1 border rounded text-center shadow-sm"
+                                />
                                 <button type="button" onClick={recalcFine} className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded shadow-sm hover:bg-blue-700">
                                     Recalc
                                 </button>
@@ -516,6 +561,7 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                         <option value="expired">Expired</option>
                         <option value="renewed">Renewed</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="custom">Custom</option>
                     </select>
                 </div>
 

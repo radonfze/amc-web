@@ -97,138 +97,163 @@ export default function ManagerDashboard() {
         dueToday: 0,
         overdueCount: 0,
         expiringSoon: 0,
-        criticalWarning: 0, // 80-90 days
-        topVisits: [] as any[],
-        topCollections: [] as any[],
-        schedule: [] as any[],
-        revenue: [] as any[],
+        newCustomers: 0,
+        expiredCount: 0,
+        criticalWarning: 0, // 90+ days
+        lastVisited: [] as any[], // Last 10 checked
+        paymentsToday: 0,
+        amcQueue: [] as any[], // Critical items
         pipeline: [] as any[],
-        amcQueue: [] as any[], // AMC Queue Board
-        renewalsList: [] as any[] // Renewal Pending List
+        renewalsList: [] as any[],
+        schedule: [] as any[]
     });
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(new Date());
 
     useEffect(() => {
         load();
-        
-        // Live Update: Poll every 30 seconds
-        const interval = setInterval(() => {
-            load();
-        }, 30000);
-
+        const interval = setInterval(() => load(), 30000);
         return () => clearInterval(interval);
     }, []);
 
     async function load() {
         const today = new Date();
         const todayStr = today.toISOString().slice(0, 10);
-        const thirtyDaysLater = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-        const ninetyDaysLater = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-
-        // Date math for 80-90 days warning
-        const date80DaysAgo = new Date(); date80DaysAgo.setDate(today.getDate() - 80);
-        const date90DaysAgo = new Date(); date90DaysAgo.setDate(today.getDate() - 90);
         
+        // Ranges
+        const day30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+        const day60 = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+        const day90 = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+        
+        const past30 = new Date(); past30.setDate(today.getDate() - 30);
+        const past30Str = past30.toISOString().slice(0, 10);
+
+        // Critical Threshold: Contracts not visited in 90 days OR overdue by 90 days?
+        // User said "Critical to (90+)" so probably Overdue > 90 days or Next Due < 90 days ago?
+        // Usually Critical implies Overdue. 
+        // Let's assume Critical = Next Due Date was 90+ days ago OR Status overdue.
+        // Actually, for AMC, Critical means "Last Visited > 90 days ago".
+        const date90DaysAgo = new Date(); date90DaysAgo.setDate(today.getDate() - 90);
+        const date90Str = date90DaysAgo.toISOString().slice(0, 10);
+
         try {
-            // 1. Contracts due today
-            const { data: dueToday } = await supabase
+            // 1. Due Today
+            const { count: dueToday } = await supabase
                 .from('amc_contracts')
-                .select('id')
-                .in('status', ['active', 'due_soon'])
+                .select('*', { count: 'exact', head: true })
                 .eq('next_due_date', todayStr);
 
-            // 2. Overdue count
+            // 2. Overdue Total
             const { count: overdueCount } = await supabase
                 .from('amc_contracts')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'overdue');
+                .lt('next_due_date', todayStr)
+                .neq('status', 'renewed'); // Exclude renewed
 
-            // 3. Expiring soon count
-            const { count: expiringSoonCount } = await supabase
+            // 3. New Customer Generated (Last 30 days)
+            const { count: newCustomers } = await supabase
                 .from('amc_contracts')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'active')
-                .gte('end_date', todayStr)
-                .lte('end_date', thirtyDaysLater);
+                .gte('created_at', past30Str); // Assuming created_at tracks this
 
-            // 4. Critical Warning (80-90 days since last visit)
-            const { data: criticalData } = await supabase
+            // 4. Expired (Not Renewed)
+            const { count: expiredCount } = await supabase
                 .from('amc_contracts')
-                .select('id, last_effective_visit_date')
-                .eq('status', 'active')
-                .lt('last_effective_visit_date', date80DaysAgo.toISOString().slice(0, 10))
-                .gt('last_effective_visit_date', date90DaysAgo.toISOString().slice(0, 10));
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'expired');
 
-            // 5. AMC Queue Board 
+            // 5. Payment Collected Today
+            // Need to join payments table. Assuming "payments" table has "collected_at" or "payment_date"
+            // Start of today filter
+            const startOfDay = new Date(today.setHours(0,0,0,0)).toISOString();
+            const endOfDay = new Date(today.setHours(23,59,59,999)).toISOString();
+            
+            const { data: payments } = await supabase
+                .from('payments')
+                .select('amount')
+                .gte('collected_at', startOfDay) // Assuming collected_at exists
+                .lte('collected_at', endOfDay);
+                
+            const totalCollected = payments?.reduce((acc, p) => acc + (p.amount || 0), 0) || 0;
+
+            // 6. Last Checked 10 AMC List (with Timestamp)
+            const { data: lastVisited } = await supabase
+                .from('amc_contracts')
+                .select('id, customer_name, location_name, last_effective_visit_date')
+                .not('last_effective_visit_date', 'is', null)
+                .order('last_effective_visit_date', { ascending: false })
+                .limit(10);
+
+            // 7. Queue Board (Critical 90+)
             const { data: amcQueue } = await supabase
                 .from('amc_contracts')
                 .select('id, customer_name, location_name, customer_area, next_due_date')
-                .in('status', ['active', 'overdue', 'due_soon']) // Added due_soon just in case
-                .lte('next_due_date', todayStr)
-                .order('next_due_date', { ascending: true })
+                .or(`next_due_date.lt.${date90Str},status.eq.overdue`) // Logic: Due date was > 90 days ago? Or Next Due - Today > 90?
+                // "Critical to (90+)" usually means "Overdue by 90 days"
+                // Let's just fetch ALL overdue and sort by oldest due date to show "Most Critical"
+                .lt('next_due_date', todayStr)
+                .order('next_due_date', { ascending: true }) // Oldest first = Most Critical
                 .limit(10);
-
-            // 6. Renewal Pending List (Using explicit Select)
-            const { data: renewalsList } = await supabase
-                .from('amc_contracts')
-                .select('id, customer_name, end_date')
-                .eq('status', 'active')
-                .gte('end_date', todayStr)
-                .lte('end_date', thirtyDaysLater)
-                .order('end_date', { ascending: true })
-                .limit(5);
-
-            // 7. Pipeline Calculation (Client-Side for reliability)
-            // Fetch all active contracts ending in next 90 days
-            const { data: rawPipeline } = await supabase
-                .from('amc_contracts')
-                .select('end_date')
-                .eq('status', 'active')
-                .gte('end_date', todayStr)
-                .lte('end_date', ninetyDaysLater);
             
-            // Bucket them in JS
-            const pipelineBuckets = [
-                { bucket: '0-30', count: 0 },
-                { bucket: '31-60', count: 0 },
-                { bucket: '61-90', count: 0 },
+            // 8. Pipeline Stats (30, 60, 60-80, 90+)
+            // Fetch contracts due in future
+            const { data: pipelineData } = await supabase
+                .from('amc_contracts')
+                .select('next_due_date')
+                .gte('next_due_date', todayStr);
+
+            const pipe = [
+                { bucket: '30 Days', count: 0 },
+                { bucket: '60 Days', count: 0 },
+                { bucket: '60-80 Days', count: 0 },
+                { bucket: 'Critical (90+)', count: 0 } // This implies Due in > 90 days? Or Overdue?
+                // Usually "Pipeline" is future revenue/work. "Critical" is overdue.
+                // Re-reading user: "Pipeline (90d)" widget title in screenshot... 
+                // Request: "30 DAYS, 60 DAYS, 60-80 DAYS, NEW CUSTOMER GENERATED, EXPIRED..."
+                // User: "QUE BOARD SHOULD SHOW THE CRITICAL TO (90+)".
+                // Let's assume Pipeline is FUTURE Dues.
+                // 30 Days = Due in 0-30
+                // 60 Days = Due in 31-60
+                // 60-80 Days = Due in 61-80
+                // 90+ = Due in > 90 ?
             ];
-            
-            if (rawPipeline) {
+
+            if (pipelineData) {
                 const now = new Date();
-                rawPipeline.forEach(c => {
-                    const end = new Date(c.end_date);
-                    const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                    if (diffDays <= 30) pipelineBuckets[0].count++;
-                    else if (diffDays <= 60) pipelineBuckets[1].count++;
-                    else if (diffDays <= 90) pipelineBuckets[2].count++;
+                pipelineData.forEach(c => {
+                    if (!c.next_due_date) return;
+                    const due = new Date(c.next_due_date);
+                    const diffTime = due.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays <= 30) pipe[0].count++;
+                    else if (diffDays <= 60) pipe[1].count++;
+                    else if (diffDays <= 80) pipe[2].count++;
+                    else pipe[3].count++; 
                 });
             }
 
-            // 8. Standard Charts/Tables
-            const { data: topVisits } = await supabase.rpc('top_tech_visits_30days');
-            const { data: topCollections } = await supabase.rpc('top_tech_collections_30days');
-            const { data: schedule } = await supabase.from('today_tech_schedule').select('*').limit(10);
-            const { data: revenue } = await supabase.rpc('revenue_forecast_30days');
-            
+            // 9. Schedule
+             const { data: schedule } = await supabase.from('today_tech_schedule').select('*').limit(5);
+
             setStats({
-                dueToday: dueToday?.length || 0,
+                dueToday: dueToday || 0,
                 overdueCount: overdueCount || 0,
-                expiringSoon: expiringSoonCount || 0,
-                criticalWarning: criticalData?.length || 0,
-                topVisits: topVisits || [],
-                topCollections: topCollections || [],
-                schedule: schedule || [],
-                revenue: revenue || [],
-                pipeline: pipelineBuckets, // Use our JS calculated buckets
+                expiringSoon: 0, 
+                newCustomers: newCustomers || 0,
+                expiredCount: expiredCount || 0,
+                criticalWarning: amcQueue?.length || 0, // Using queue length as critical metric
+                lastVisited: lastVisited || [],
+                paymentsToday: totalCollected,
                 amcQueue: amcQueue || [],
-                renewalsList: renewalsList || []
+                pipeline: pipe,
+                renewalsList: [], // Clean up unused
+                schedule: schedule || []
             });
             setLastUpdated(new Date());
             setLoading(false);
         } catch (error) {
-            console.error("Dashboard Load Error:", error);
+            console.error(error);
             setLoading(false);
         }
     }
@@ -251,12 +276,23 @@ export default function ManagerDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <KPI title="Due Today" value={stats.dueToday} color="blue" href="/manager/contracts?filter=due_today" />
                 <KPI title="Overdue" value={stats.overdueCount} color="red" href="/manager/contracts?filter=overdue" />
-                <KPI title="Expiring (30d)" value={stats.expiringSoon} color="yellow" href="/manager/contracts?filter=expiring_30" />
-                <KPI title="Critical (80-90d)" value={stats.criticalWarning} color="orange" icon="⚠️" href="/manager/contracts?filter=critical_80_90" />
                 
+                {/* New Customers Widget */}
+                <div className="p-4 rounded shadow border-l-4 bg-purple-50 border-purple-500 text-purple-600">
+                    <div className="text-sm font-medium text-gray-500">New Customers (30d)</div>
+                    <div className="text-2xl font-bold text-gray-900 mt-1">{stats.newCustomers}</div>
+                </div>
+
+                {/* Expired Widget */}
+                <div className="p-4 rounded shadow border-l-4 bg-gray-50 border-gray-500 text-gray-600">
+                    <div className="text-sm font-medium text-gray-500">Expired (Not Renewed)</div>
+                    <div className="text-2xl font-bold text-gray-900 mt-1">{stats.expiredCount}</div>
+                </div>
+                
+                {/* Payments Today Widget */}
                 <div className="p-4 rounded shadow border-l-4 bg-green-50 border-green-500 text-green-600">
-                    <div className="text-sm font-medium text-gray-500">Revenue (30d)</div>
-                    <div className="text-xl font-bold text-gray-900 mt-1">AED {totalProjectedRevenue.toLocaleString()}</div>
+                    <div className="text-sm font-medium text-gray-500">Collection Today</div>
+                    <div className="text-xl font-bold text-gray-900 mt-1">AED {stats.paymentsToday.toLocaleString()}</div>
                 </div>
             </div>
 
@@ -270,7 +306,7 @@ export default function ManagerDashboard() {
                         <div className="px-6 py-4 border-b border-gray-100 bg-red-50 flex justify-between items-center">
                              {/* Make Queue Clickable Link too */}
                             <Link href="/manager/contracts?filter=amc_queue" className="flex-1 flex justify-between items-center group">
-                                <h3 className="font-bold text-red-900 group-hover:text-red-700 transition">🚨 AMC Queue Board (Due/Overdue)</h3>
+                                <h3 className="font-bold text-red-900 group-hover:text-red-700 transition">🚨 Queue Board (Critical/Overdue 90+)</h3>
                             </Link>
                             <button onClick={() => load()} className="text-xs bg-white border border-red-200 text-red-700 px-3 py-1 rounded hover:bg-red-50">Refresh</button>
                         </div>
@@ -300,11 +336,35 @@ export default function ManagerDashboard() {
                                     </tr>
                                 ))}
                                 {stats.amcQueue.length === 0 && (
-                                    <tr><td colSpan={4} className="p-4 text-center text-gray-400">No overdue AMCs pending!</td></tr>
+                                    <tr><td colSpan={4} className="p-4 text-center text-gray-400">No critical overdue AMCs!</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+
+                    {/* NEW: Last Checked 10 AMC List */}
+                    <SimpleTable 
+                        title="Last 10 AMC Visits (Checked)"
+                        rows={stats.lastVisited.map(l => ({
+                            ...l,
+                            // Format Timestamp DD-MM-YY- HH-MM-SS
+                            ts: l.last_effective_visit_date 
+                                ? new Date(l.last_effective_visit_date)
+                                    .toLocaleString('en-GB', { 
+                                        day: '2-digit', month: '2-digit', year: '2-digit',
+                                        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false 
+                                    })
+                                    .replace(/\//g, '-')   // DD-MM-YY
+                                    .replace(',', '-')     // - HH:MM:SS
+                                    .replace(/:/g, '-')    // HH-MM-SS
+                                : 'N/A'
+                        }))}
+                        columns={[
+                            { header: 'Customer', key: 'customer_name' },
+                            { header: 'Location', key: 'location_name' },
+                            { header: 'Checked At', key: 'ts', className: 'w-48' }
+                        ]}
+                    />
 
                     {/* Today's Schedule */}
                     <div className="bg-white rounded shadow text-sm border border-gray-100 overflow-hidden">
@@ -343,24 +403,14 @@ export default function ManagerDashboard() {
                 {/* Right Column: Widgets */}
                 <div className="space-y-6">
                     
-                    {/* Renewal Pending List */}
-                    <SimpleTable 
-                        title="Renewals Pending (30d)" 
-                        rows={stats.renewalsList} 
-                        columns={[
-                            { header: 'Customer', key: 'customer_name' },
-                            { header: 'End Date', key: 'end_date' }
-                        ]}
-                    />
-
-                    {/* Visual Pie/Funnel */}
+                    {/* Visual Pie/Funnel - Pipeline */}
                     <Card>
-                        <h3 className="font-semibold text-gray-900 mb-4">Pipeline (90d)</h3>
+                        <h3 className="font-semibold text-gray-900 mb-4">Pipeline Stats</h3>
                         <div className="space-y-3">
                             {stats.pipeline.map((p: any) => (
-                                <div key={p.bucket} className="flex justify-between items-center bg-blue-50 p-2 rounded text-xs">
-                                    <span className="font-bold text-blue-700">{p.bucket} Days</span>
-                                    <span className="bg-white px-2 py-0.5 rounded text-blue-600 font-bold border border-blue-100">{p.count}</span>
+                                <div key={p.bucket} className={`flex justify-between items-center p-2 rounded text-xs ${p.bucket.includes('Critical') ? 'bg-red-50' : 'bg-blue-50'}`}>
+                                    <span className={`font-bold ${p.bucket.includes('Critical') ? 'text-red-700' : 'text-blue-700'}`}>{p.bucket}</span>
+                                    <span className={`bg-white px-2 py-0.5 rounded font-bold border ${p.bucket.includes('Critical') ? 'text-red-600 border-red-100' : 'text-blue-600 border-blue-100'}`}>{p.count}</span>
                                 </div>
                             ))}
                         </div>
