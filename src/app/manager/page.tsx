@@ -260,7 +260,7 @@ export default function ManagerDashboard() {
 
     if (loading) return <div className="p-8">Loading Dashboard...</div>;
 
-    const totalProjectedRevenue = (stats.revenue || []).reduce((acc: number, curr: any) => acc + (curr.expected_amount || 0), 0);
+
 
     return (
         <div className="space-y-6">
