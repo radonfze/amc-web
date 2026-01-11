@@ -128,7 +128,8 @@ function ContractsListContent() {
 
         // 1. Manually Cascade: Delete Visits & Events & Payments
         // We do this because database might restrict delete if children exist
-
+        
+        // Events (table: contract_events, column: contract_id)
         const { error: eventError } = await supabase
             .from('contract_events')
             .delete()
@@ -136,17 +137,20 @@ function ContractsListContent() {
             
         if (eventError) console.warn('Error deleting events:', eventError);
 
+        // Visits (table: amc_visits, column: amc_contract_id)
         const { error: visitError } = await supabase
             .from('amc_visits')
             .delete()
-            .in('contract_id', ids);
+            .in('amc_contract_id', ids);
 
         if (visitError) console.error('Error deleting visits:', visitError);
 
+        // Payments (table: payments, column: amc_contract_id)
+        // note: previously incorrectly 'amc_payments'
         const { error: paymentError } = await supabase
-            .from('amc_payments')
+            .from('payments')
             .delete()
-            .in('contract_id', ids);
+            .in('amc_contract_id', ids);
 
         if (paymentError) console.warn('Error deleting payments:', paymentError);
 
@@ -160,7 +164,8 @@ function ContractsListContent() {
 
         if (error) {
             console.error(error);
-            alert('Error deleting contracts: ' + error.message + '\n\nPlease check console involved relations.');
+            // Detailed alert for user
+            alert(`Error deleting contract(s):\n${error.message}\n\nPlease check console for details.`);
         } else {
             // Optimistic update
             const remaining = contracts.filter(c => !ids.includes(c.id));
