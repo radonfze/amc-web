@@ -64,6 +64,31 @@ function ContractsListContent() {
                      // Queued: Active/Overdue/Due Soon <= Today
                      return (['active', 'overdue', 'due_soon'].includes(c.status)) && (c.next_due_date <= todayStr || !c.next_due_date);
                 }
+                
+                // --- NEW FILTERS ---
+                if (filterType === 'new_customers') {
+                    const created = new Date(c.created_at);
+                    const diffTime = today.getTime() - created.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    return diffDays <= 30;
+                }
+                if (filterType === 'expired') {
+                    return c.status === 'expired' || (c.end_date && c.end_date < todayStr && c.status !== 'renewed');
+                }
+                
+                // Pipeline Filters
+                if (filterType?.startsWith('pipeline_')) {
+                    if (!c.next_due_date) return false;
+                    const due = new Date(c.next_due_date);
+                    const diffTime = due.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (filterType === 'pipeline_30') return diffDays >= 0 && diffDays <= 30;
+                    if (filterType === 'pipeline_60') return diffDays > 30 && diffDays <= 60;
+                    if (filterType === 'pipeline_80') return diffDays > 60 && diffDays <= 80;
+                    if (filterType === 'pipeline_critical') return diffDays > 90; // Or overdue > 90? User said Critical (90+)
+                }
+
                 return true;
             });
         }

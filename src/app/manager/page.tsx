@@ -286,22 +286,28 @@ export default function ManagerDashboard() {
                 <KPI title="Overdue" value={stats.overdueCount} color="red" href="/manager/contracts?filter=overdue" />
                 
                 {/* New Customers Widget */}
-                <div className="p-4 rounded shadow border-l-4 bg-purple-50 border-purple-500 text-purple-600">
-                    <div className="text-sm font-medium text-gray-500">New Customers (30d)</div>
-                    <div className="text-2xl font-bold text-gray-900 mt-1">{stats.newCustomers}</div>
-                </div>
+                <Link href="/manager/contracts?filter=new_customers" className="block">
+                    <div className="p-4 rounded shadow border-l-4 bg-purple-50 border-purple-500 text-purple-600 hover:shadow-md transition cursor-pointer">
+                        <div className="text-sm font-medium text-gray-500">New Customers (30d)</div>
+                        <div className="text-2xl font-bold text-gray-900 mt-1">{stats.newCustomers}</div>
+                    </div>
+                </Link>
 
                 {/* Expired Widget */}
-                <div className="p-4 rounded shadow border-l-4 bg-gray-50 border-gray-500 text-gray-600">
-                    <div className="text-sm font-medium text-gray-500">Expired (Not Renewed)</div>
-                    <div className="text-2xl font-bold text-gray-900 mt-1">{stats.expiredCount}</div>
-                </div>
+                <Link href="/manager/contracts?filter=expired" className="block">
+                    <div className="p-4 rounded shadow border-l-4 bg-gray-50 border-gray-500 text-gray-600 hover:shadow-md transition cursor-pointer">
+                        <div className="text-sm font-medium text-gray-500">Expired (Not Renewed)</div>
+                        <div className="text-2xl font-bold text-gray-900 mt-1">{stats.expiredCount}</div>
+                    </div>
+                </Link>
                 
                 {/* Payments Today Widget */}
-                <div className="p-4 rounded shadow border-l-4 bg-green-50 border-green-500 text-green-600">
-                    <div className="text-sm font-medium text-gray-500">Collection Today</div>
-                    <div className="text-xl font-bold text-gray-900 mt-1">AED {stats.paymentsToday.toLocaleString()}</div>
-                </div>
+                <Link href="/manager/payments" className="block">
+                    <div className="p-4 rounded shadow border-l-4 bg-green-50 border-green-500 text-green-600 hover:shadow-md transition cursor-pointer">
+                        <div className="text-sm font-medium text-gray-500">Collection Today</div>
+                        <div className="text-xl font-bold text-gray-900 mt-1">AED {stats.paymentsToday.toLocaleString()}</div>
+                    </div>
+                </Link>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -415,16 +421,29 @@ export default function ManagerDashboard() {
                     <Card>
                         <h3 className="font-semibold text-gray-900 mb-4">Pipeline Stats</h3>
                         <div className="space-y-3">
-                            {stats.pipeline.map((p: any) => (
-                                <div key={p.bucket} className={`flex justify-between items-center p-2 rounded text-xs ${p.bucket.includes('Critical') ? 'bg-red-50' : 'bg-blue-50'}`}>
-                                    <span className={`font-bold ${p.bucket.includes('Critical') ? 'text-red-700' : 'text-blue-700'}`}>{p.bucket}</span>
-                                    <span className={`bg-white px-2 py-0.5 rounded font-bold border ${p.bucket.includes('Critical') ? 'text-red-600 border-red-100' : 'text-blue-600 border-blue-100'}`}>{p.count}</span>
-                                </div>
-                            ))}
+                            {stats.pipeline.map((p: any) => {
+                                // Determine Filter based on bucket name
+                                let filter = '';
+                                if(p.bucket.includes('30')) filter = 'pipeline_30';
+                                else if(p.bucket.includes('60') && !p.bucket.includes('80')) filter = 'pipeline_60';
+                                else if(p.bucket.includes('80')) filter = 'pipeline_80';
+                                else if(p.bucket.includes('Critical')) filter = 'pipeline_critical';
+
+                                return (
+                                <Link key={p.bucket} href={`/manager/contracts?filter=${filter}`} className="block">
+                                    <div className={`flex justify-between items-center p-2 rounded text-xs ${p.bucket.includes('Critical') ? 'bg-red-50 hover:bg-red-100' : 'bg-blue-50 hover:bg-blue-100'} transition cursor-pointer`}>
+                                        <span className={`font-bold ${p.bucket.includes('Critical') ? 'text-red-700' : 'text-blue-700'}`}>{p.bucket}</span>
+                                        <span className={`bg-white px-2 py-0.5 rounded font-bold border ${p.bucket.includes('Critical') ? 'text-red-600 border-red-100' : 'text-blue-600 border-blue-100'}`}>{p.count}</span>
+                                    </div>
+                                </Link>
+                                );
+                            })}
                         </div>
                     </Card>
 
-                    <TechTable title="Top Techs (Visits)" rows={stats.topVisits} metric="visits" />
+                    <Link href="/manager/techs" className="block hover:shadow-lg transition">
+                        <TechTable title="Top Techs (Visits)" rows={stats.topVisits} metric="visits" />
+                    </Link>
                 </div>
             </div>
         </div>
