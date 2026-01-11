@@ -260,22 +260,8 @@ export default function ImportPage() {
         setRows(updated);
     }
 
-    async function handleResetDB() {
-        if (!confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas.\n\nType "YES" to confirm.')) return;
-        
-        setLoading(true);
-        try {
-            const res = await fetch('/api/admin/reset-db', { method: 'POST' });
-            const json = await res.json();
-            if (json.success) {
-                alert('Database wiped successfully.');
-                window.location.reload();
-            } else {
-                alert('Failed: ' + json.error);
-            }
-        } catch(e) { console.error(e); alert('Error wiping'); }
-        setLoading(false);
-    }
+    // No need for separate handler if inlining, but keeping clean logic
+    // Using variant="danger" instead of destructive
 
     return (
         <div className="space-y-6">
@@ -286,7 +272,7 @@ export default function ImportPage() {
                 </div>
                 <div className="flex flex-wrap gap-3">
                      <Button 
-                        variant="destructive"
+                        variant="danger"
                         onClick={async () => {
                             if (confirm('DANGER: This will delete ALL Customers, Contracts, Visits, and Areas. This action cannot be undone. Are you sure?')) {
                                 setLoading(true);
