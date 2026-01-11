@@ -126,16 +126,29 @@ function ContractsListContent() {
     const deleteContracts = async (ids: number[]) => {
         setLoading(true);
 
-        // 1. Manually Cascade: Delete Visits
+        // 1. Manually Cascade: Delete Visits & Events & Payments
         // We do this because database might restrict delete if children exist
+
+        const { error: eventError } = await supabase
+            .from('contract_events')
+            .delete()
+            .in('contract_id', ids);
+            
+        if (eventError) console.warn('Error deleting events:', eventError);
+
         const { error: visitError } = await supabase
             .from('amc_visits')
             .delete()
             .in('contract_id', ids);
 
-        if (visitError) {
-            console.error('Error deleting visits (Manual Cascade):', visitError);
-        }
+        if (visitError) console.error('Error deleting visits:', visitError);
+
+        const { error: paymentError } = await supabase
+            .from('amc_payments')
+            .delete()
+            .in('contract_id', ids);
+
+        if (paymentError) console.warn('Error deleting payments:', paymentError);
 
         // 2. Contracts
         const { error } = await supabase
@@ -152,11 +165,9 @@ function ContractsListContent() {
             // Optimistic update
             const remaining = contracts.filter(c => !ids.includes(c.id));
             setContracts(remaining);
-            // Explicitly update filtered list for immediate feedback
             setFilteredContracts(prev => prev.filter(c => !ids.includes(c.id)));
             
             alert('Contract(s) deleted successfully.');
-            // Reload to be safe
             loadContracts(); 
         }
     };
