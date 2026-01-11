@@ -45,6 +45,8 @@ export default function NewContractPage() {
         amcDate: '',
         renewalDate: '',
         renewedDate: '', // Previous Expiry Date
+        lastCheckedDate: '',
+        nextDueDate: '',
         status: '',
         distance: '',
         govtFees: '',
@@ -57,16 +59,33 @@ export default function NewContractPage() {
 
     const [daysFromExpiry, setDaysFromExpiry] = useState<number | null>(null);
 
-    // Auto-calculate Renewal Date whenever AMC Date or Duration changes
+    // Auto-calculate Renewal Date and Next Due Date whenever AMC Date or Duration changes
     useEffect(() => {
-        if (form.amcDate && duration) {
+        if (form.amcDate) {
             const start = new Date(form.amcDate);
             if (!isNaN(start.getTime())) {
-                const end = new Date(start);
-                end.setMonth(start.getMonth() + duration);
-                end.setDate(end.getDate() - 1);
-                const renewalStr = end.toISOString().split('T')[0];
-                setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+                // Renewal Date
+                if (duration) {
+                    const end = new Date(start);
+                    end.setMonth(start.getMonth() + duration);
+                    end.setDate(end.getDate() - 1);
+                    const renewalStr = end.toISOString().split('T')[0];
+                    setForm(prev => ({ ...prev, renewalDate: renewalStr }));
+                }
+
+                // Next Due Date (Default +90 days) - Only if not already set or assume auto-calc
+                // Note: We'll overwrite it for now if it's empty.
+                const due = new Date(start);
+                due.setDate(due.getDate() + 90);
+                const dueStr = due.toISOString().split('T')[0];
+                
+                // Last Checked = AMC Date (Default)
+                
+                setForm(prev => ({ 
+                    ...prev, 
+                    nextDueDate: prev.nextDueDate ? prev.nextDueDate : dueStr,
+                    lastCheckedDate: prev.lastCheckedDate ? prev.lastCheckedDate : form.amcDate
+                }));
             }
         }
     }, [form.amcDate, duration]);
@@ -326,9 +345,20 @@ export default function NewContractPage() {
                             <label className="text-xs text-gray-500 block mb-1">Renewal Date</label>
                             <input name="renewalDate" type="date" value={form.renewalDate} onChange={handleChange} required className="input w-full border rounded px-3 py-2 bg-gray-50" readOnly />
                         </div>
-                        <div>
+                         <div>
                             <label className="text-xs text-gray-500 block mb-1">Expired Date (Previous)</label>
                              <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" placeholder="Previous Expiry" />
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 border-t pt-2 mt-2">
+                         <div>
+                            <label className="text-xs text-gray-500 block mb-1 font-semibold text-blue-600">Last AMC Checked Date</label>
+                             <input name="lastCheckedDate" type="date" value={form.lastCheckedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2 bg-blue-50" />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1 font-semibold text-blue-600">Next AMC Due Date</label>
+                             <input name="nextDueDate" type="date" value={form.nextDueDate} onChange={handleChange} className="input w-full border rounded px-3 py-2 bg-blue-50" />
                         </div>
                     </div>
                     

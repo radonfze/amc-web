@@ -57,7 +57,8 @@ export default function ImportPage() {
         "LONGI",
         "RENEWAL DATE",
         "AMC Date",
-        "Days from Last Check date",
+        "Last Checked Date",
+        "Next AMC Due Date",
         "Renewed",
         "Status",
         "Distance"

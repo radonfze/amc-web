@@ -75,9 +75,13 @@ export async function createManualContract(formData: FormData) {
 
     if (!customerName) throw new Error("Customer Name is required");
 
-    // Calculate Next Due Date Safely
-    let nextDueDate = null;
-    if (amcDate) {
+    // Calculate Next Due Date Safely (only if not provided by user)
+    // NOTE: Override nextDueDate using const from earlier logic if needed
+    
+    const lastCheckedDate = formData.get('lastCheckedDate') as string || null;
+    let nextDueDate = formData.get('nextDueDate') as string || null;
+    
+    if (!nextDueDate && amcDate) {
         const d = new Date(amcDate);
         if (!isNaN(d.getTime())) {
             d.setDate(d.getDate() + 90);
@@ -168,9 +172,9 @@ export async function createManualContract(formData: FormData) {
                 cycle_status: 'ok',
                 visit_day: visitDay,
                 last_renewed_date: lastRenewed,
-                last_effective_visit_date: amcDate,
+                last_effective_visit_date: lastCheckedDate || amcDate, 
                 next_due_date: nextDueDate,
-                technician_id: user.id // Assign to creator (Manager)
+                technician_id: user.id 
             });
 
         if (contractError) {
@@ -258,6 +262,10 @@ export async function updateManualContract(contractId: number, formData: FormDat
         }).eq('id', locationId);
     }
 
+    // Date Fields
+    const lastCheckedDate = formData.get('lastCheckedDate') as string || null;
+    const nextDueDate = formData.get('nextDueDate') as string || null;
+
     // 4. Update Contract
     const { error: updateErr } = await supabase
         .from('amc_contracts')
@@ -273,7 +281,8 @@ export async function updateManualContract(contractId: number, formData: FormDat
             balance_amount: balanceAmount,
             payment_status: paymentStatus,
             last_renewed_date: lastRenewed,
-            // optionally update next_due_date logic here
+            last_effective_visit_date: lastCheckedDate,
+            next_due_date: nextDueDate
         })
         .eq('id', contractId);
 

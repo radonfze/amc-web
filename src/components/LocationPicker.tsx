@@ -28,6 +28,58 @@ function LocationMarker({ position, setPosition }: { position: [number, number],
     );
 }
 
+function LocateControl({ setPosition }: { setPosition: (pos: [number, number]) => void }) {
+    const map = useMapEvents({});
+
+    const handleLocate = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation(); // Prevent map click
+
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser");
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const { latitude, longitude } = pos.coords;
+                setPosition([latitude, longitude]);
+                map.flyTo([latitude, longitude], 18, {
+                    animate: true,
+                    duration: 1.5
+                });
+            },
+            (err) => {
+                console.error(err);
+                alert("Could not get location: " + err.message);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    };
+
+    return (
+        <div className="leaflet-top leaflet-left mt-[80px] ml-[10px]">
+            <div className="leaflet-control leaflet-bar">
+                <a
+                    href="#"
+                    onClick={handleLocate}
+                    title="Find My Location"
+                    role="button"
+                    aria-label="Find My Location"
+                    className="flex items-center justify-center bg-white hover:bg-gray-50 text-black w-[30px] h-[30px] cursor-pointer"
+                    style={{ fontSize: '18px', lineHeight: '30px', textDecoration: 'none' }}
+                >
+                    📍
+                </a>
+            </div>
+        </div>
+    );
+}
+
 interface LocationPickerProps {
     initialLat?: number;
     initialLng?: number;
@@ -79,6 +131,7 @@ export default function LocationPicker({ initialLat, initialLng, onSelect, onCan
                         </LayersControl>
 
                         <LocationMarker position={position} setPosition={setPosition} />
+                        <LocateControl setPosition={setPosition} />
                     </MapContainer>
                 </div>
 

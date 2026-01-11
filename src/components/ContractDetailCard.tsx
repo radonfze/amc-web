@@ -47,6 +47,10 @@ export default function ContractDetailCard({ contract }: { contract: any }) {
                             </span>
                         </div>
                         <div>
+                            <span className="text-gray-500 block text-xs">Last AMC Checked</span>
+                            <span className="font-medium text-blue-600">{contract.last_effective_visit_date || 'N/A'}</span>
+                        </div>
+                        <div>
                             <span className="text-gray-500 block text-xs">Technician</span>
                             <span className="font-medium">{contract.users?.name || 'Unassigned'}</span>
                         </div>

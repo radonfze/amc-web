@@ -127,8 +127,10 @@ export async function POST(req: Request) {
                 let lng = isNaN(lngRaw) ? 0 : lngRaw;
                 if ((lat < 20 || lat > 30) && (lng >= 20 && lng <= 30)) { const t = lat; lat = lng; lng = t; }
 
-                const renewalDateISO = parseDateToISO(r['RENEWAL DATE:']);
-                const amcDateISO = parseDateToISO(r['AMC Date:']);
+                const renewalDateISO = parseDateToISO(r['RENEWAL DATE:'] || r['RENEWAL DATE']);
+                const amcDateISO = parseDateToISO(r['AMC Date:'] || r['AMC Date']);
+                const lastCheckedISO = parseDateToISO(r['Last Checked Date:'] || r['Last Checked Date'] || r['Last Checked']);
+                const nextDueISO = parseDateToISO(r['Next AMC Due Date:'] || r['Next AMC Due Date'] || r['Next Due Date']);
 
                 // customer matching
                 let customer = customerMap.get('LIC:' + cleanLicense) || customerMap.get('GRA:' + cleanGra) || customerMap.get('NAME:' + cleanName?.toLowerCase());
@@ -200,7 +202,14 @@ export async function POST(req: Request) {
                          // Logic for due date etc
                          const start = new Date(amcDateISO);
                          const end = new Date(start); end.setFullYear(end.getFullYear() + 1);
-                         const due = new Date(start); due.setDate(due.getDate() + 90);
+                         
+                         let due: Date | null = null;
+                         if (nextDueISO) {
+                             due = new Date(nextDueISO);
+                         } else {
+                             due = new Date(start); 
+                             due.setDate(due.getDate() + 90);
+                         }
                          
                          let techId = null; 
                          if(allTechAreas) {
@@ -216,7 +225,8 @@ export async function POST(req: Request) {
                                  status: 'active',
                                  technician_id: techId,
                                  amount_total: 1000,
-                                 next_due_date: due.toISOString()
+                                 next_due_date: due?.toISOString(),
+                                 last_effective_visit_date: lastCheckedISO || amcDateISO
                              }).select().single();
                              if(error) throw new Error('Contract Insert: ' + error.message);
                              contractId = newCont.id;

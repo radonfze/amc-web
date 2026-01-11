@@ -47,6 +47,8 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
         amcDate: '',
         renewalDate: '',
         renewedDate: '',
+        lastCheckedDate: '',
+        nextDueDate: '',
         status: '',
         distance: '',
         govtFees: '',
@@ -96,6 +98,8 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                     amcDate: c.start_date || '',
                     renewalDate: c.end_date || '',
                     renewedDate: c.last_renewed_date || '',
+                    lastCheckedDate: c.last_effective_visit_date || '',
+                    nextDueDate: c.next_due_date || '',
                     status: c.status || '',
                     distance: c.customer_locations?.distance_km?.toString() || '',
                     govtFees: c.govt_fees?.toString() || '',
@@ -402,6 +406,17 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                         <div>
                             <label className="text-xs text-gray-500 block mb-1">Expired Date (Previous)</label>
                              <input name="renewedDate" type="date" value={form.renewedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2" placeholder="Previous Expiry" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 border-t pt-2 mt-2">
+                         <div>
+                            <label className="text-xs text-gray-500 block mb-1 font-semibold text-blue-600">Last AMC Checked Date</label>
+                             <input name="lastCheckedDate" type="date" value={form.lastCheckedDate} onChange={handleChange} className="input w-full border rounded px-3 py-2 bg-blue-50" />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-500 block mb-1 font-semibold text-blue-600">Next AMC Due Date</label>
+                             <input name="nextDueDate" type="date" value={form.nextDueDate} onChange={handleChange} className="input w-full border rounded px-3 py-2 bg-blue-50" />
                         </div>
                     </div>
                     
