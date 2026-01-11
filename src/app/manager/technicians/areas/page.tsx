@@ -20,7 +20,7 @@ type Tech = {
 type Assignment = {
     id: number;
     technician_id: string;
-    area: string; // The table uses area name string currently
+    area: string; 
 };
 
 export default function TechnicianAreasPage() {
@@ -29,7 +29,7 @@ export default function TechnicianAreasPage() {
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Selection for Merge
+    // Selection for Merge/Delete
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
     // Edit State
@@ -58,14 +58,12 @@ export default function TechnicianAreasPage() {
             .from('technician_areas')
             .select('*');
 
-        // 3. Get Areas (Single Source of Truth now)
+        // 3. Get Areas 
         const { data: areasData } = await supabase
             .from('areas')
             .select('*')
             .order('name');
         
-        // Fallback: If areas table is empty (script failed?), fallback to customers logic (Removed for now, assuming script ran)
-
         setTechs(techsData || []);
         setAssignments(assignmentsData || []);
         setAreas(areasData || []);
@@ -79,7 +77,6 @@ export default function TechnicianAreasPage() {
         if (!newName.trim()) return;
         const normalized = newName.trim();
 
-        // Check duplicate
         if (areas.some(a => a.name.toLowerCase() === normalized.toLowerCase())) {
             alert('Area already exists!');
             return;
@@ -112,7 +109,6 @@ export default function TechnicianAreasPage() {
             return;
         }
 
-        // 1. Update Area Table
         const { error: areaError } = await supabase
             .from('areas')
             .update({ name: newNameTrimmed })
@@ -123,17 +119,8 @@ export default function TechnicianAreasPage() {
             return;
         }
 
-        // 2. Propagate to Customers
-        await supabase
-            .from('customers')
-            .update({ area: newNameTrimmed })
-            .eq('area', oldArea.name);
-
-        // 3. Propagate to Technician Assignments
-        await supabase
-            .from('technician_areas')
-            .update({ area: newNameTrimmed })
-            .eq('area', oldArea.name);
+        await supabase.from('customers').update({ area: newNameTrimmed }).eq('area', oldArea.name);
+        await supabase.from('technician_areas').update({ area: newNameTrimmed }).eq('area', oldArea.name);
 
         setEditingId(null);
         loadData();
@@ -141,34 +128,26 @@ export default function TechnicianAreasPage() {
 
     // 3. Delete
     const handleDelete = async (area: Area) => {
-        if (!confirm(`Are you sure you want to delete "${area.name}"?`)) return;
-
-        // 1. Check usage (optional, but good UX) - for now just warn in prompt
-        // "This will remove the area from all Customers assigned to it."
+        if (!confirm(`Are you sure you want to delete "${area.name}"? This will remove the area from all Customers assigned to it.`)) return;
         
-        // 2. Set Customers Area to NULL
-        await supabase
-            .from('customers')
-            .update({ area: null })
-            .eq('area', area.name);
-
-        // 3. Delete Assignments
-        await supabase
-            .from('technician_areas')
-            .delete()
-            .eq('area', area.name);
-
-        // 4. Delete Area
-        const { error } = await supabase
-            .from('areas')
-            .delete()
-            .eq('id', area.id);
+        await supabase.from('customers').update({ area: null }).eq('area', area.name);
+        await supabase.from('technician_areas').delete().eq('area', area.name);
+        const { error } = await supabase.from('areas').delete().eq('id', area.id);
 
         if (error) alert(error.message);
         else loadData();
     };
 
-    // 4. Merge
+    // 4. Bulk Operations
+    const toggleSelectAll = () => {
+        if (selectedIds.size === areas.length && areas.length > 0) {
+            setSelectedIds(new Set());
+        } else {
+            const all = new Set(areas.map(a => a.id));
+            setSelectedIds(all);
+        }
+    };
+
     const toggleSelection = (id: number) => {
         const newSet = new Set(selectedIds);
         if (newSet.has(id)) newSet.delete(id);
@@ -176,10 +155,31 @@ export default function TechnicianAreasPage() {
         setSelectedIds(newSet);
     };
 
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedIds.size} areas? This will remove these areas from all assigned customers.`)) return;
+
+        const targets = areas.filter(a => selectedIds.has(a.id));
+        const names = targets.map(a => a.name);
+        const ids = targets.map(a => a.id);
+
+        setLoading(true);
+
+        // Batch Update/Delete
+        await supabase.from('customers').update({ area: null }).in('area', names);
+        await supabase.from('technician_areas').delete().in('area', names);
+        const { error } = await supabase.from('areas').delete().in('id', ids);
+
+        if (error) {
+            alert('Error deleting areas: ' + error.message);
+        } else {
+            setSelectedIds(new Set());
+            loadData();
+        }
+    };
+
     const handleMerge = async () => {
         if (selectedIds.size < 2) return;
         
-        // Pick primary
         const selectedAreas = areas.filter(a => selectedIds.has(a.id));
         const primaryName = prompt(
             `Merge ${selectedAreas.length} areas: ${selectedAreas.map(a => a.name).join(', ')}\n\nEnter the EXACT name of the area to keep (others will be merged into it):`,
@@ -188,7 +188,6 @@ export default function TechnicianAreasPage() {
 
         if (!primaryName) return;
 
-        // Verify primary exists in selection
         const primary = selectedAreas.find(a => a.name === primaryName);
         if (!primary) {
             alert('Target area must be one of the selected areas.');
@@ -197,30 +196,15 @@ export default function TechnicianAreasPage() {
 
         const others = selectedAreas.filter(a => a.id !== primary.id);
 
-        // Execute Merge
-        for (const other of others) {
-            // 1. Move Customers
-            await supabase
-                .from('customers')
-                .update({ area: primary.name })
-                .eq('area', other.name);
+        setLoading(true);
 
-            // 2. Update/Merge Assignments
-            // logic: update to new name. if new name already exists for that tech, it might duplicate. 
-            // Ideally we delete duplicates, but simplified: just update. Tech Areas ID is PK.
-            // Postgres will error on update unique violation if there is a constraint? 
-            // The table likely doesn't have a unique constraint on (tech_id, area) unless we added it.
-            // Safe bet: Delete 'other' assignments if 'primary' assignment exists, else update.
-            
-            // Fetch assignments for 'other'
-            const { data: otherAssigns } = await supabase
-                .from('technician_areas')
-                .select('*')
-                .eq('area', other.name);
+        for (const other of others) {
+            await supabase.from('customers').update({ area: primary.name }).eq('area', other.name);
+
+            const { data: otherAssigns } = await supabase.from('technician_areas').select('*').eq('area', other.name);
 
             if (otherAssigns) {
                 for (const assign of otherAssigns) {
-                    // Check if target exists
                     const { data: existing } = await supabase
                         .from('technician_areas')
                         .select('id')
@@ -229,16 +213,12 @@ export default function TechnicianAreasPage() {
                         .single();
                     
                     if (existing) {
-                        // Conflict: Tech already has Primary. Just delete the Other assignment.
                         await supabase.from('technician_areas').delete().eq('id', assign.id);
                     } else {
-                        // Move assignment
                         await supabase.from('technician_areas').update({ area: primary.name }).eq('id', assign.id);
                     }
                 }
             }
-
-            // 3. Delete 'Other' Area
             await supabase.from('areas').delete().eq('id', other.id);
         }
 
@@ -261,11 +241,24 @@ export default function TechnicianAreasPage() {
         loadData();
     }
 
+    const isAllSelected = areas.length > 0 && selectedIds.size === areas.length;
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold text-gray-900">Technician Area Assignment</h1>
                 <div className="flex gap-2">
+                    {/* Bulk Delete Button */}
+                    {selectedIds.size > 0 && (
+                        <Button
+                            onClick={handleBulkDelete}
+                            className="bg-red-100 text-red-700 hover:bg-red-200 border-red-200"
+                        >
+                            <TrashIcon className="w-4 h-4 mr-2" />
+                            Delete ({selectedIds.size})
+                        </Button>
+                    )}
+                    {/* Merge Button */}
                     {selectedIds.size >= 2 && (
                         <Button 
                             variant="secondary" 
@@ -308,11 +301,13 @@ export default function TechnicianAreasPage() {
                             <thead className="bg-gray-100">
                                 <tr>
                                     <th className="border px-4 py-2 w-10 text-center">
+                                        {/* Enabled Select All Checkbox */}
                                         <input 
-                                            type="checkbox" 
-                                            disabled 
-                                            className="rounded border-gray-300" 
-                                            title="Select rows to merge"
+                                            type="checkbox"
+                                            checked={isAllSelected}
+                                            onChange={toggleSelectAll}
+                                            className="rounded border-gray-300 cursor-pointer" 
+                                            title="Select All"
                                         />
                                     </th>
                                     <th className="border px-4 py-2 text-left font-medium text-gray-600 min-w-[200px]">Area</th>
