@@ -280,28 +280,6 @@ export default function ImportPage() {
             }
         });
     }
-                        'LICENSE NO.': license,
-                        'GRA No.': gra,
-                        'CONTACT NO.': contact,
-                        'LATT': rawLat,
-                        'LONGIT': rawLng,
-                        'RENEWAL DATE:': renewal,
-                        'AMC Date:': amcDate,
-                        
-                        coordStatus: undefined
-                    };
-                });
-
-                setRows(classified);
-                setSummary(buildSummary(classified));
-                setLoading(false);
-                setRowResults([]); 
-                
-                // Immediately Run Analysis to show status
-                analyzeRows(classified);
-            },
-        });
-    }
 
     function buildSummary(classified: ClassifiedRow[]) {
         const existing = classified.filter((r) => r.customerType === 'existing');
@@ -320,6 +298,74 @@ export default function ImportPage() {
             newCustomers: newCustomers.length,
             duplicates: duplicates.length
         };
+    }
+
+    async function handleImport(isDryRun: boolean) {
+        if (!rows.length) {
+            alert("No rows to import.");
+            return;
+        }
+
+        const msg = isDryRun 
+            ? "Run Simulation? This will not change data." 
+            : "⚠️ START LIVE IMPORT? \n\nThis will write to the database. \nMake sure you have reset the DB if this is a fresh import.";
+            
+        if(!confirm(msg)) return;
+
+        setLoading(true);
+        setProgress(0);
+        setRowResults([]);
+        setImportStatus('Starting...');
+
+        const BATCH_SIZE = 50; 
+        const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
+        let allResults: any[] = [];
+        
+        try {
+            for (let i = 0; i < totalBatches; i++) {
+                const start = i * BATCH_SIZE;
+                const end = Math.min(start + BATCH_SIZE, rows.length);
+                const batch = rows.slice(start, end);
+
+                setImportStatus(`Importing batch ${i + 1} of ${totalBatches} (Rows ${start + 1}-${end})...`);
+                
+                const res = await fetch('/api/import-amc', {
+                    method: 'POST',
+                    body: JSON.stringify({ rows: batch, dryRun: isDryRun, skipInvalid }),
+                    headers: { 'Content-Type': 'application/json' },
+                }).then((r) => r.json());
+
+                if (res.error) throw new Error(res.error);
+
+                 // Accommodate index offset for results
+                const batchResults = (res.rowResults || []).map((r: any) => ({
+                    ...r,
+                    index: r.index + start 
+                }));
+
+                allResults = [...allResults, ...batchResults];
+
+                // Update Progress
+                setProgress(Math.round(((i + 1) / totalBatches) * 100));
+            }
+    
+            setLoading(false);
+            setImportStatus(isDryRun ? 'Simulation Complete' : 'Import Complete');
+            
+            if (!isDryRun) {
+                alert(`Import Complete! Imported ${allResults.filter((r:any) => r.success).length} rows.`);
+                window.location.href = '/manager/contracts'; 
+            } else {
+                alert('Simulation Complete.');
+            }
+    
+            setRowResults(allResults);
+
+        } catch (error: any) {
+            setLoading(false);
+            console.error(error);
+            alert("Import Failed at batch " + importStatus + ": " + error.message);
+        }
     }
 
     // Renamed to analyze to be clear it runs automatically or manually
